@@ -1,0 +1,47 @@
+# Local development on a laptop. Values here are safe defaults for the docker-compose stack;
+# override anything via a git-ignored .env file (loaded by your IDE / docker compose).
+# See design-docs/ENVIRONMENTS.md section 9.
+
+spring:
+  datasource:
+    url: ${NYVRA_DB_URL:jdbc:postgresql://localhost:5432/nyvra}
+    username: ${NYVRA_DB_USERNAME:nyvra}
+    password: ${NYVRA_DB_PASSWORD:nyvra}
+    hikari:
+      maximum-pool-size: 5
+
+  flyway:
+    # Local convenience: migrate on boot. dev/staging/prod run migrations as a separate gated step.
+    enabled: true
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${NYVRA_OIDC_ISSUER_URI:http://localhost:8081/realms/nyvra}
+
+  docker:
+    compose:
+      # Start the stack yourself: `docker compose up -d`. Auto-management is off because the compose
+      # file has two Postgres services (app DB + Keycloak DB) and auto-wiring would pick the wrong one.
+      enabled: false
+
+  jpa:
+    properties:
+      hibernate:
+        format_sql: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+
+springdoc:
+  swagger-ui:
+    enabled: true
+
+logging:
+  level:
+    com.rohit.nyvra: DEBUG
+    org.springframework.web: DEBUG

@@ -1,0 +1,30 @@
+# Production-like. Release validation / UAT / perf. Synthetic PII only — no real user data.
+# See design-docs/ENVIRONMENTS.md.
+
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    # Migrations run as a dedicated gated CI step, not on app boot.
+    enabled: false
+  datasource:
+    hikari:
+      maximum-pool-size: ${NYVRA_DB_POOL_MAX:20}
+
+management:
+  server:
+    port: 9090
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+springdoc:
+  swagger-ui:
+    enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.rohit.nyvra: INFO

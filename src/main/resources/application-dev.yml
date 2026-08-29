@@ -1,0 +1,28 @@
+# Shared integration environment. Deployed from main by CI. Synthetic data only.
+# All connection details + secrets injected as environment variables. See design-docs/ENVIRONMENTS.md.
+
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    # Runtime migration allowed in dev; staging/prod use a separate gated job.
+    enabled: true
+  datasource:
+    hikari:
+      maximum-pool-size: ${NYVRA_DB_POOL_MAX:10}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+springdoc:
+  swagger-ui:
+    enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.rohit.nyvra: INFO
