@@ -1,7 +1,11 @@
-# nyvra-backend — Design Docs Index (CLAUDE.md)
+# nyvra-backend — Design Docs Index
 
-> Entry point for the backend design documentation. Read this first, then follow the links.
-> This folder describes **intended design**. Where it disagrees with code, the code is either wrong or the doc is stale — raise it, don't silently follow one.
+> **Note:** the repo-root [`../CLAUDE.md`](../CLAUDE.md) is the Claude Code entry point (loaded every
+> session). This file is the fuller design-doc index; Claude Code also loads it automatically when you
+> edit files under `design-docs/`.
+>
+> Read this first, then follow the links. This folder describes **intended design** — where it
+> disagrees with code, the code is either wrong or the doc is stale; raise it, don't silently follow one.
 
 ---
 
