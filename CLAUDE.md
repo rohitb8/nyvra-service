@@ -74,7 +74,10 @@ src/main/resources/
   openapi/           exported contract for the frontend client
 ```
 
-## Status
+## Status & what to work on next
 
 Skeleton stage. `user` is the only implemented module. TimescaleDB hypertables, table partitioning,
 and field-level encryption are defined in `DATABASE_DESIGN.md` but deferred to later migrations.
+
+See [`TODO.md`](TODO.md) for the prioritised roadmap (phases: foundation → DB migrations → API
+contract → business logic → ingestion → hardening → launch).
