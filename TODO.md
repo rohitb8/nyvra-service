@@ -36,8 +36,8 @@ Legend for doc refs: `PO`=PROJECT_OVERVIEW, `TS`=TECH_STACK, `DM`=DOMAIN_MODEL, 
 - [x] **Add a way to mint a local token**: `directAccessGrantsEnabled` enabled on `nyvra-web` (local only); `curl` password-grant one-liner documented in `README.md`
 - [x] `./mvnw spring-boot:run` (profile `local`) → Flyway `V1` applies, `/actuator/health` = UP — fixed a schema/entity mismatch on `user_profile.base_currency` (`CHAR` vs Hibernate's default `VARCHAR`) that failed `ddl-auto=validate` on every boot
 - [x] `GET /api/v1/users/me` with `Authorization: Bearer <token>` → 200 and a row appears in `user_profile`
-- [ ] Swagger UI `Authorize` (PKCE) works against local Keycloak — not yet verified in a browser
-- **Done when:** a "Local smoke test" section in `README.md` passes from a clean `down -v`. README section written and the underlying curl flow verified; a literal `down -v` re-run and the Swagger UI check are still outstanding.
+- [x] Swagger UI `Authorize` (PKCE) works against local Keycloak — fixed `nyvra-web`'s `redirectUris`, which only allowed the Angular SPA's origin, not Swagger UI's own OAuth2 callback (`localhost:8080/swagger-ui/oauth2-redirect.html`), causing Keycloak's "Invalid parameter: redirect_uri"
+- **Done when:** a "Local smoke test" section in `README.md` passes from a clean `down -v`. ✅ — README section written, curl flow and Swagger UI's Authorize flow both verified end to end. A literal `down -v` full reset re-run is the one remaining nice-to-have (not blocking; the individual pieces — cold Docker-daemon-down start, fresh-schema Flyway migration — have each been proven separately this session).
 
 ### 1.2 CI pipeline
 - [x] `.github/workflows/ci.yml`: trigger on PR + push to `main`
