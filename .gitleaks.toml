@@ -1,0 +1,10 @@
+title = "nyvra-service gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "docker-compose.yml only ever holds trivial, local-only dev credentials (nyvra/nyvra, guest/guest, etc.) by design — real secrets live in .env (git-ignored) or a platform secret manager, never here. See docs/operations/ENVIRONMENTS.md section 6."
+paths = [
+  '''docker-compose\.yml''',
+]

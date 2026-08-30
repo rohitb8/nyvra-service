@@ -29,6 +29,19 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history, not the default shallow clone — gitleaks below scans every commit, not
+          # just the tip, so a secret committed and later removed still gets caught.
+          fetch-depth: 0
+
+      # Runs the plain gitleaks Docker image directly rather than a wrapper Action, so this doesn't
+      # depend on any Action's own licensing/maintenance status. .gitleaks.toml allowlists
+      # docker-compose.yml's local-only placeholder credentials (nyvra/nyvra, guest/guest, ...) —
+      # see docs/operations/ENVIRONMENTS.md section 6.
+      - name: Secret scan (gitleaks)
+        run: >-
+          docker run --rm -v "${{ github.workspace }}:/repo" zricethezav/gitleaks:latest
+          detect --source /repo --config /repo/.gitleaks.toml --redact -v
 
       - uses: actions/setup-java@v5
         with:

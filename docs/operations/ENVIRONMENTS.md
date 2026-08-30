@@ -108,15 +108,72 @@ Required per environment (names indicative; supplied via the platform's secret m
 | `NYVRA_RABBITMQ_URL` / user / password | Broker |
 | `NYVRA_S3_ENDPOINT` / `NYVRA_S3_BUCKET` / `NYVRA_S3_ACCESS_KEY` / `NYVRA_S3_SECRET_KEY` | Object storage |
 | `NYVRA_FIELD_ENCRYPTION_KEY` (+ `..._KEY_PREVIOUS` for rotation) | 🔒 column encryption (see `DATABASE_DESIGN.md`) — **backed up separately from the DB** |
+| `NYVRA_BLIND_INDEX_KEY` | HMAC key for blind-index lookup columns (e.g. `email_hash`) on 🔒 columns that still need equality lookups — see `DATABASE_DESIGN.md` → Field-level encryption |
 | `NYVRA_OIDC_ISSUER_URI` etc. | Keycloak (issuer is not secret but is env-injected) |
 | `NYVRA_AA_CLIENT_ID` / `NYVRA_AA_CLIENT_SECRET` / `NYVRA_AA_BASE_URL` | Account Aggregator (Setu/Finvu) — sandbox creds for non-prod |
 | `NYVRA_PRICE_FEED_API_KEY` | NAV / price feed |
 | `NYVRA_GMAIL_OAUTH_CLIENT_ID` / `_SECRET` | Gmail API supplement (optional) |
 | `NYVRA_SENTRY_DSN` / observability tokens | Error + metrics pipelines |
 
-Rotation: field-encryption key supports dual-key (current + previous) for zero-downtime rotation;
-re-encrypt job walks 🔒 rows in the background. All other secrets rotated via the platform manager
-with a rolling restart.
+### 6.1 Provider abstraction (decision)
+
+**Now:** plain environment variables everywhere — `.env` (git-ignored) locally, injected by the CI/CD
+platform per environment otherwise. No secret is ever read from a file checked into the repo or from
+`application-*.yml`. **Later:** swap the injection mechanism for Vault or the chosen cloud's secret
+manager (AWS Secrets Manager, GCP Secret Manager, Azure Key Vault — see §7) without any application
+code change, since the app only ever reads `System.getenv(...)`/Spring property placeholders — *how*
+the env var gets populated at deploy time is entirely a platform/CI concern, not an app concern. This
+is why there's no secrets-client SDK dependency in `pom.xml` today.
+
+### 6.2 Generating local secrets
+
+Not needed to boot the app today — field-level encryption isn't implemented yet (`TODO.md` Phase
+2.10) — but generate real values once you start on it, rather than shipping with the `.env.example`
+placeholder:
+
+```bash
+openssl rand -base64 32   # NYVRA_FIELD_ENCRYPTION_KEY
+openssl rand -base64 32   # NYVRA_BLIND_INDEX_KEY
+```
+
+Same commands for any environment; only the destination differs (`.env` locally, the platform secret
+manager everywhere else). See `docs/PREREQUISITES.md` §3 for the first-run version of this.
+
+### 6.3 Key-rotation runbook (stub)
+
+A stub, not a drill — the actual `EncryptedStringConverter`/re-encrypt job this describes doesn't
+exist yet (`TODO.md` Phase 2.10). Documenting the intended procedure now so the encryption work is
+built against a known rotation story from day one, not bolted on after.
+
+**Field-encryption key (`NYVRA_FIELD_ENCRYPTION_KEY`), dual-key rotation — zero downtime:**
+1. Generate a new key (`openssl rand -base64 32`).
+2. Set the **current** value into `NYVRA_FIELD_ENCRYPTION_KEY_PREVIOUS`; set the newly generated value
+   into `NYVRA_FIELD_ENCRYPTION_KEY`. The app must be able to decrypt with *either* while both are set
+   (reads try current, fall back to previous) and always encrypt new/updated rows with current.
+3. Deploy — from this point every write uses the new key; every existing 🔒 row is still readable via
+   `_PREVIOUS`.
+4. Run the background re-encrypt job (`TODO.md` Phase 2.10) to walk every 🔒 row and rewrite it under
+   the current key. Safe to run gradually — the app tolerates both keys throughout.
+5. Once the job reports 100% and a spot-check confirms no row still needs the old key, remove
+   `NYVRA_FIELD_ENCRYPTION_KEY_PREVIOUS` and deploy again.
+6. Securely destroy the old key material (it must not be needed again after step 5).
+
+**Blind-index key (`NYVRA_BLIND_INDEX_KEY`) rotation is *not* zero-downtime the same way**: every
+blind-index value (e.g. `email_hash`) is a deterministic HMAC of the plaintext under this key, so
+rotating it means recomputing every hash in one pass before old-key lookups stop working — plan a
+maintenance window or a similar dual-column expand/contract, don't reuse the field-encryption
+procedure as-is.
+
+**All other secrets** (DB/Redis/RabbitMQ/S3 credentials, OAuth client secrets, API keys): rotate via
+the platform's secret manager, then a rolling restart — no application-level dual-key handling needed
+since these aren't used to decrypt already-persisted data.
+
+### 6.4 Secret scanning
+
+CI runs `gitleaks` (`.github/workflows/ci.yml`) against the full commit history on every PR and push
+to `main`, failing the build if it finds anything matching a secret pattern. `.gitleaks.toml`
+allowlists `docker-compose.yml`'s local-only placeholder credentials (`nyvra`/`nyvra`, `guest`/`guest`,
+etc.) — those are intentionally trivial dev-only values, not a leak.
 
 ---
 

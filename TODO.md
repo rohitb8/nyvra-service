@@ -69,11 +69,11 @@ Legend for doc refs: `PO`=PROJECT_OVERVIEW, `TS`=TECH_STACK, `DM`=DOMAIN_MODEL, 
 - [x] `GlobalExceptionHandler` 400/404/500 unchanged; **fixed** 401/403 — they never actually reached the handler before this (Spring Security's filter-chain defaults intercepted them ahead of MVC dispatch), now `ApiErrorAuthenticationEntryPoint`/`ApiErrorAccessDeniedHandler` cover them; added 409 (`ConflictException` + `DataIntegrityViolationException`, the latter already reachable today), 422 (`UnprocessableEntityException`), 429 (`RateLimitExceededException`) — all `ApiError`-shaped with `traceId`, no leaked exception messages on 500
 - [x] Asserted via two focused unit tests rather than one log-capture integration test: `UserIdMdcFilterTest` (subject in MDC, email/name never do) and `GlobalExceptionHandlerTest` (500 never echoes the original message)
 
-### 1.6 Secrets strategy sign-off
-- [ ] Document generation of `NYVRA_FIELD_ENCRYPTION_KEY` (`openssl rand -base64 32`) and `NYVRA_BLIND_INDEX_KEY`
-- [ ] Confirm `.gitignore` blocks `.env*` (keep `.env.example`); add a CI secret-scan (gitleaks) step
-- [ ] Decide the provider abstraction: env vars now, Vault/cloud secret manager later (`ENV` §6/§7); no `file:` secrets
-- [ ] Write the key-rotation runbook stub (dual-key: `_KEY` + `_KEY_PREVIOUS`)
+### 1.6 Secrets strategy sign-off  ✅ done
+- [x] Documented generation of `NYVRA_FIELD_ENCRYPTION_KEY` and `NYVRA_BLIND_INDEX_KEY` (`openssl rand -base64 32`) — `ENV` §6.2, cross-linked from `docs/PREREQUISITES.md`; also fixed `NYVRA_BLIND_INDEX_KEY` being entirely missing from `ENV` §6's inventory table and from `.env.example` despite being referenced elsewhere
+- [x] Confirmed `.gitignore` actually blocks `.env*` (verified with `git check-ignore`, not just read the file) while keeping `.env.example` tracked; added a gitleaks CI step (`.github/workflows/ci.yml`, full-history scan) — caught and fixed one real finding (a false positive on `docker-compose.yml`'s local-only Keycloak DB URL, now allowlisted via `.gitleaks.toml` with a documented reason)
+- [x] Provider abstraction decision written up explicitly — `ENV` §6.1 (env vars now, swap the injection mechanism for Vault/cloud secret manager later with zero app code change, since the app only ever reads env vars)
+- [x] Key-rotation runbook stub — `ENV` §6.3: dual-key zero-downtime procedure for the field-encryption key, plus an explicit callout that the blind-index key does **not** rotate the same way (deterministic HMAC — needs a recompute pass, not dual-key tolerance)
 
 ---
 
