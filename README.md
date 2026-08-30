@@ -38,11 +38,17 @@ docker compose up -d                 # Postgres/Timescale, Redis, RabbitMQ, MinI
 | MinIO console | http://localhost:9001 (nyvra / nyvra-secret) |
 | RabbitMQ console | http://localhost:15672 (guest / guest) |
 
-Smoke test (needs a token from Keycloak for user `demo` / `demo`):
+Smoke test — mint a token for `demo`/`demo` (password grant, local-only client) and call the API:
 
 ```bash
+TOKEN=$(curl -s -X POST http://localhost:8081/realms/nyvra/protocol/openid-connect/token \
+  -d "client_id=nyvra-web" -d "grant_type=password" -d "username=demo" -d "password=demo" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
 curl -s http://localhost:8080/api/v1/users/me -H "Authorization: Bearer $TOKEN"
 ```
+(`jq -r .access_token` works instead of the `python3` one-liner if you have `jq` installed.) Swap
+`demo`/`demo` for `admin`/`admin` to get a token with the `admin` role too.
 
 ## Build / test
 
