@@ -45,7 +45,7 @@ Legend for doc refs: `PO`=PROJECT_OVERVIEW, `TS`=TECH_STACK, `DM`=DOMAIN_MODEL, 
 - [x] Flyway validation against an ephemeral DB — decided on a `postgres` service (`timescale/timescaledb-ha:pg16`, matching prod); added `flyway-maven-plugin` to `pom.xml` (wasn't there before, despite `ENV` §9 documenting `./mvnw flyway:migrate`) so the check is a real `flyway:migrate` run against an empty DB, not just app-boot side-effect
 - [~] **OpenAPI drift check**: deliberately a guarded placeholder for now, not the full boot+diff — `openapi/nyvra-api-v1.yaml` doesn't exist yet (Phase 3.5), and a real boot-and-diff needs a live/mocked OIDC issuer for `SecurityConfig`'s `JwtDecoder` to resolve, which is Phase 1.3's `mock-oauth2-server`. Revisit once both land.
 - [x] Build the Docker image on `main` (don't push yet)
-- [ ] Enable branch protection on `main` requiring CI green — needs a green run on GitHub first (repo setting, not committed config); do after first push
+- [ ] Enable branch protection on `main` requiring CI green — CI is green on GitHub, so this is unblocked, but **deliberately deferred**: required status checks block direct pushes to `main` (a commit needs an existing passing check run before it can land, not just at PR-merge time), which conflicts with the direct-to-main workflow for initial setup. Revisit once the project switches to feature-branch + PR (see the git-workflow session memory).
 - **Done when:** a test PR shows a green required check.  Ref: `ENV` §8.
 
 ### 1.3 Test infrastructure
