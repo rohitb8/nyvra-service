@@ -49,10 +49,10 @@ Legend for doc refs: `PO`=PROJECT_OVERVIEW, `TS`=TECH_STACK, `DM`=DOMAIN_MODEL, 
 - **Done when:** a test PR shows a green required check.  Ref: `ENV` §8.
 
 ### 1.3 Test infrastructure
-- [ ] `AbstractIntegrationTest` base: `@SpringBootTest` + `@Testcontainers` + `@ServiceConnection` on a **`timescale/timescaledb-ha:pg16`** Postgres container (must match prod so hypertable DDL runs), `@ActiveProfiles("test")`
-- [ ] Mock the OIDC decoder: `mock-oauth2-server` container **or** MockMvc `.with(jwt())` postprocessors; `@DynamicPropertySource` for `issuer-uri`
-- [ ] Test data builders / object-mothers per aggregate
-- [ ] One real repository integration test that runs in CI
+- [x] `AbstractIntegrationTest` base: `@SpringBootTest` + `@Testcontainers` + `@ServiceConnection` on a **`timescale/timescaledb-ha:pg16`** Postgres container (must match prod so hypertable DDL runs), `@ActiveProfiles("test")` — needed bumping `testcontainers.version` to `1.21.4` (Spring Boot 3.3.5's managed `1.19.8` can't talk to newer Docker Desktop/Engine releases)
+- [x] Mock the OIDC decoder: went with MockMvc `.with(jwt())` postprocessors (`TestSecurityConfig`'s stub `JwtDecoder` lets the context boot without a reachable issuer) rather than `mock-oauth2-server` — simpler, no extra CI container; revisit if Phase 3.4's real audience/issuer validation needs a live-token test
+- [x] Test data builders / object-mothers per aggregate — `UserProfileMother` (only aggregate so far)
+- [x] One real repository integration test that runs in CI — `UserProfileRepositoryIntegrationTest`; also added `UserControllerIntegrationTest` to prove the OIDC-mock path end to end
 - **Done when:** `./mvnw verify` runs a Testcontainers test locally and in CI.  Ref: `TS` (Tests row).
 
 ### 1.4 `ARCHITECTURE.md`

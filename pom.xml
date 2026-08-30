@@ -23,6 +23,12 @@
         <springdoc.version>2.6.0</springdoc.version>
         <mapstruct.version>1.6.2</mapstruct.version>
         <lombok-mapstruct-binding.version>0.2.0</lombok-mapstruct-binding.version>
+        <!-- Spring Boot 3.3.5's BOM manages 1.19.8, whose bundled docker-java can't talk to newer
+             Docker Engine/Desktop releases (gets an empty-bodied 400 on the initial handshake).
+             Override to the latest 1.x (staying off the 2.x major to avoid any API-shape risk with
+             spring-boot-testcontainers' glue code, which targets the Boot 3.3.x + Testcontainers 1.x
+             combination it shipped with). -->
+        <testcontainers.version>1.21.4</testcontainers.version>
         <!-- Must match the Flyway version Spring Boot 3.3.5's BOM manages (flyway-core / -database-postgresql
              on the app classpath), so `./mvnw flyway:migrate` behaves the same as the app's own migration. -->
         <flyway.version>10.10.0</flyway.version>
@@ -157,6 +163,13 @@
         <dependency>
             <groupId>org.springframework.modulith</groupId>
             <artifactId>spring-modulith-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- @ServiceConnection support — auto-configures the datasource from a Testcontainers
+             container instead of NYVRA_DB_URL/USERNAME/PASSWORD env vars. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
