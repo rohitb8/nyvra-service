@@ -53,9 +53,12 @@ curl -s http://localhost:8080/api/v1/users/me -H "Authorization: Bearer $TOKEN"
 ## Build / test
 
 ```bash
-./mvnw clean verify        # compile + tests
+./mvnw clean verify        # compile + tests (spins up a Testcontainers Postgres)
 ./mvnw spring-boot:build-image   # OCI image (or use the Dockerfile)
 ```
+
+CI (`.github/workflows/ci.yml`) runs the same build plus a Flyway-migration check and a gitleaks
+secret scan on every PR and push to `main`.
 
 ## Environments
 
@@ -67,15 +70,22 @@ Config strategy, secrets, and the promotion flow are in
 ## Layout
 
 ```
+start-local-server.sh    one-command local dev startup
+.github/workflows/       CI: build, test, Flyway validation, gitleaks, Docker build
 src/main/java/com/rohit/nyvra/
 ├── NyvraApplication.java
-├── config/            SecurityConfig, OpenApiConfig, JacksonConfig
-├── common/exception/  ApiError, GlobalExceptionHandler, ...
-├── user/              first real module — profile, JIT provisioning, GET /users/me
+├── config/             SecurityConfig, OpenApiConfig, JacksonConfig
+├── common/exception/   ApiError, GlobalExceptionHandler, ...
+├── common/logging/     CorrelationIdFilter, UserIdMdcFilter
+├── common/security/    ApiErrorAuthenticationEntryPoint, ApiErrorAccessDeniedHandler
+├── user/               first real module — profile, JIT provisioning, GET /users/me
 ├── ingestion/ accounts/ income/ expense/ networth/ portfolio/ aggregator/ analytics/
-│                      module placeholders (package-info only) — build out per DOMAIN_MODEL.md
+│                       module placeholders (package-info only) — build out per DOMAIN_MODEL.md
 src/main/resources/
 ├── application.yml + application-{local,dev,staging,prod}.yml
-├── db/migration/      Flyway (V1__init_schema.sql)
-└── openapi/           exported contract for the frontend client
+├── logback-spring.xml  pretty console (local/test) vs JSON (dev/staging/prod)
+├── db/migration/       Flyway (V1__init_schema.sql)
+└── openapi/            exported contract for the frontend client
+src/test/java/com/rohit/nyvra/
+└── AbstractIntegrationTest.java   Testcontainers Postgres + stub JwtDecoder base for @SpringBootTests
 ```

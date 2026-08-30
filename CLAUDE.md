@@ -57,33 +57,45 @@ This root file is the always-on summary.
 ## Commands
 
 ```bash
-cp .env.example .env && docker compose up -d   # Postgres/Timescale, Redis, RabbitMQ, MinIO, Keycloak
-./mvnw spring-boot:run                          # app on :8080, profile 'local'
-./mvnw clean verify                             # compile + tests
+./start-local-server.sh                         # starts Docker if needed, brings up the stack, runs the app
+./mvnw clean verify                              # compile + tests (Testcontainers Postgres)
 ```
 
 Swagger UI `http://localhost:8080/swagger-ui.html` · Keycloak `http://localhost:8081` (admin/admin) ·
-local login user `demo` / `demo`.
+local login user `demo` / `demo`. See root `README.md` for the manual step-by-step and the token-minting
+smoke test.
 
 ## Layout
 
 ```
+start-local-server.sh   one-command local dev startup (Docker + app)
+.github/workflows/      CI: build, test, Flyway validation, gitleaks secret scan, Docker build
+.gitleaks.toml          secret-scan allowlist (docker-compose.yml's local-only dev creds)
 src/main/java/com/rohit/nyvra/
-  config/            SecurityConfig, OpenApiConfig, JacksonConfig
-  common/exception/  ApiError, GlobalExceptionHandler
-  user/              first real module — profile, JIT provisioning, GET /users/me
+  config/              SecurityConfig, OpenApiConfig, JacksonConfig
+  common/exception/    ApiError, GlobalExceptionHandler, ResourceNotFoundException + 409/422/429 exceptions
+  common/logging/      CorrelationIdFilter, UserIdMdcFilter — traceId/userId in MDC (never email)
+  common/security/     ApiErrorAuthenticationEntryPoint, ApiErrorAccessDeniedHandler (401/403 → ApiError)
+  user/                first real module — profile, JIT provisioning, GET /users/me
   ingestion/ accounts/ income/ expense/ networth/ portfolio/ aggregator/ analytics/
-                     module placeholders (package-info) — build out per DOMAIN_MODEL.md
+                       module placeholders (package-info) — build out per DOMAIN_MODEL.md
 src/main/resources/
   application.yml + application-{local,dev,staging,prod}.yml
-  db/migration/      Flyway
-  openapi/           exported contract for the frontend client
+  logback-spring.xml   pretty console (local/test) vs JSON (dev/staging/prod)
+  db/migration/        Flyway
+  openapi/             exported contract for the frontend client
+src/test/java/com/rohit/nyvra/
+  AbstractIntegrationTest.java   @SpringBootTest base — Testcontainers Postgres + stub JwtDecoder
+  ArchitectureTest.java          Spring Modulith model check
 ```
 
 ## Status & what to work on next
 
-Skeleton stage. `user` is the only implemented module. TimescaleDB hypertables, table partitioning,
-and field-level encryption are defined in `DATABASE_DESIGN.md` but deferred to later migrations.
+`user` is still the only real domain module (Phase 2+ builds out the rest), but the foundation is
+done: CI, Testcontainers-backed test infra, `ARCHITECTURE.md`, logging/correlation-id, full
+`GlobalExceptionHandler` status coverage, and the secrets strategy (`TODO.md` Phase 1, all done).
+TimescaleDB hypertables, table partitioning, and field-level encryption are defined in
+`DATABASE_DESIGN.md` but deferred to Phase 2's migrations.
 
 See [`TODO.md`](TODO.md) for the prioritised roadmap (phases: foundation → DB migrations → API
 contract → business logic → ingestion → hardening → launch).
