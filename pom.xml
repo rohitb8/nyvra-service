@@ -23,6 +23,14 @@
         <springdoc.version>2.6.0</springdoc.version>
         <mapstruct.version>1.6.2</mapstruct.version>
         <lombok-mapstruct-binding.version>0.2.0</lombok-mapstruct-binding.version>
+        <!-- Must match the Flyway version Spring Boot 3.3.5's BOM manages (flyway-core / -database-postgresql
+             on the app classpath), so `./mvnw flyway:migrate` behaves the same as the app's own migration. -->
+        <flyway.version>10.10.0</flyway.version>
+        <!-- Defaults match the local docker-compose Postgres (docker-compose.yml); override with
+             -Dflyway.url=... for CI or any other target. -->
+        <flyway.url>jdbc:postgresql://localhost:5432/nyvra</flyway.url>
+        <flyway.user>nyvra</flyway.user>
+        <flyway.password>nyvra</flyway.password>
     </properties>
 
     <dependencyManagement>
@@ -200,6 +208,36 @@
                         </path>
                     </annotationProcessorPaths>
                 </configuration>
+            </plugin>
+            <!-- Not bound to any lifecycle phase — only runs when explicitly invoked
+                 (`./mvnw flyway:migrate`), e.g. in CI to validate migrations against an empty DB, or
+                 locally as an alternative to letting the app migrate on boot. Reads migrations
+                 straight from source (filesystem:) rather than classpath:, since invoking this goal
+                 directly does not first copy src/main/resources into target/classes. -->
+            <plugin>
+                <groupId>org.flywaydb</groupId>
+                <artifactId>flyway-maven-plugin</artifactId>
+                <version>${flyway.version}</version>
+                <configuration>
+                    <url>${flyway.url}</url>
+                    <user>${flyway.user}</user>
+                    <password>${flyway.password}</password>
+                    <locations>
+                        <location>filesystem:src/main/resources/db/migration</location>
+                    </locations>
+                </configuration>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.flywaydb</groupId>
+                        <artifactId>flyway-database-postgresql</artifactId>
+                        <version>${flyway.version}</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>org.postgresql</groupId>
+                        <artifactId>postgresql</artifactId>
+                        <version>${postgresql.version}</version>
+                    </dependency>
+                </dependencies>
             </plugin>
         </plugins>
     </build>
