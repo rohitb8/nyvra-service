@@ -15,10 +15,10 @@ Full checklist (accounts, secrets, reading order) in [`docs/PREREQUISITES.md`](d
 ## Run locally
 
 ```bash
-./scripts/dev-up.sh
+./start-local-server.sh
 ```
 Starts Docker if it isn't running, brings up the compose stack, waits for it to be healthy, then
-runs the app on `:8080` (profile `local`). `./scripts/dev-up.sh --infra-only` brings up just the
+runs the app on `:8080` (profile `local`). `./start-local-server.sh --infra-only` brings up just the
 stack without starting the app.
 
 Equivalent manual steps:

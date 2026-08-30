@@ -5,18 +5,18 @@
 # healthy, then runs the app in the foreground.
 #
 # Usage:
-#   ./scripts/dev-up.sh              # infra + app (default)
-#   ./scripts/dev-up.sh --infra-only # bring up infra and stop, don't start the app
+#   ./start-local-server.sh              # infra + app (default)
+#   ./start-local-server.sh --infra-only # bring up infra and stop, don't start the app
 #
 # See docs/PREREQUISITES.md and docs/operations/ENVIRONMENTS.md for background.
 
 set -euo pipefail
 
 # Always run from the repo root, regardless of where this script is invoked from.
-cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-log() { printf '[dev-up] %s\n' "$1"; }
-die() { printf '[dev-up] ERROR: %s\n' "$1" >&2; exit 1; }
+log() { printf '[start-local-server] %s\n' "$1"; }
+die() { printf '[start-local-server] ERROR: %s\n' "$1" >&2; exit 1; }
 
 INFRA_ONLY=0
 for arg in "$@"; do

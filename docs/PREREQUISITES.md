@@ -23,11 +23,11 @@ accounts, no cloud provider, no external API keys are needed for local developme
 ## 2. First-run checklist
 
 ```bash
-./scripts/dev-up.sh
+./start-local-server.sh
 ```
 Starts the Docker daemon if needed, brings up the compose stack, waits for it to report healthy
 (including Keycloak's realm import, which has no Compose-level healthcheck), then runs the app on
-`:8080` (profile `local`; Flyway `V1` applies on boot). `./scripts/dev-up.sh --infra-only` brings up
+`:8080` (profile `local`; Flyway `V1` applies on boot). `./start-local-server.sh --infra-only` brings up
 just the stack without starting the app. Equivalent manual steps:
 
 ```bash
