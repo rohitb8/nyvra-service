@@ -9,6 +9,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /**
  * A nyvra user, keyed by the Keycloak {@code sub} claim. Never stores credentials.
@@ -34,7 +36,12 @@ public class UserProfile {
     @Column(name = "display_name")
     private String displayName;
 
+    // @Column's columnDefinition only affects DDL generation, not schema *validation* — Hibernate
+    // validates against the mapped JDBC type, which defaults to VARCHAR for a String. The migration
+    // uses CHAR(3) per docs/engineering/DATABASE_DESIGN.md's currency-column convention, so the JDBC
+    // type must be pinned to CHAR explicitly or ddl-auto=validate rejects it as a type mismatch.
     @Column(name = "base_currency", nullable = false, length = 3)
+    @JdbcTypeCode(SqlTypes.CHAR)
     private String baseCurrency = "INR";
 
     @Column(name = "created_at", nullable = false, updatable = false)

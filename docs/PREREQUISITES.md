@@ -23,12 +23,16 @@ accounts, no cloud provider, no external API keys are needed for local developme
 ## 2. First-run checklist
 
 ```bash
-cp .env.example .env            # defaults already match the compose stack; edit only to override
-docker compose up -d            # Postgres/Timescale, Redis, RabbitMQ, MinIO, Keycloak (+ its DB)
+./scripts/dev-up.sh
 ```
-Wait for all container healthchecks to go green, then:
+Starts the Docker daemon if needed, brings up the compose stack, waits for it to report healthy
+(including Keycloak's realm import, which has no Compose-level healthcheck), then runs the app on
+`:8080` (profile `local`; Flyway `V1` applies on boot). `./scripts/dev-up.sh --infra-only` brings up
+just the stack without starting the app. Equivalent manual steps:
 
 ```bash
+cp .env.example .env            # defaults already match the compose stack; edit only to override
+docker compose up -d            # Postgres/Timescale, Redis, RabbitMQ, MinIO, Keycloak (+ its DB)
 ./mvnw spring-boot:run          # profile 'local'; Flyway V1 applies on boot
 ```
 
