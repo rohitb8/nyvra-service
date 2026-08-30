@@ -22,28 +22,147 @@ Project nyvra {
 //// Enums (documentation sugar — physically TEXT + CHECK on every table below)
 //// ==========================================================================
 
-Enum risk_band { CONSERVATIVE BALANCED AGGRESSIVE }
-Enum consent_source { AA GMAIL MANUAL }
-Enum account_type { SAVINGS CURRENT LOAN CREDIT_CARD TERM_DEPOSIT RECURRING_DEPOSIT EPF NPS }
-Enum record_source { AA MANUAL DERIVED GMAIL }
-Enum account_status { ACTIVE CLOSED STALE }
-Enum txn_direction { DEBIT CREDIT }
-Enum card_network { VISA MASTERCARD RUPAY AMEX }
-Enum income_type { SALARY BUSINESS RENTAL INTEREST DIVIDEND CAPITAL_GAIN OTHER }
-Enum cadence { MONTHLY QUARTERLY ANNUAL IRREGULAR }
-Enum income_origin { AA_DETECTED MANUAL PAYSLIP }
-Enum necessity { ESSENTIAL DISCRETIONARY DEBT_REPAYMENT SAVINGS_TRANSFER }
-Enum expense_origin { AA MANUAL SPLIT }
-Enum matcher_type { MERCHANT_REGEX NARRATION_REGEX MCC }
-Enum asset_class { EQUITY MUTUAL_FUND BOND NPS EPF FOREIGN_EQUITY CASH GOLD REIT }
-Enum corporate_action_type { SPLIT BONUS DIVIDEND MERGER }
-Enum al_kind { ASSET LIABILITY }
-Enum manual_asset_class { REAL_ESTATE VEHICLE JEWELLERY PRIVATE_EQUITY PERSONAL_LOAN OTHER }
-Enum score_band { NEEDS_ATTENTION FAIR GOOD EXCELLENT }
-Enum severity { INFO WARN CRITICAL }
-Enum consent_status { REQUESTED ACTIVE PAUSED REVOKED EXPIRED }
-Enum fetch_status { PENDING RUNNING COMPLETED FAILED }
-Enum payload_type { DEPOSIT TERM_DEPOSIT RECURRING_DEPOSIT MUTUAL_FUND EQUITIES NPS EPF LOAN CREDIT_CARD }
+Enum risk_band {
+  CONSERVATIVE
+  BALANCED
+  AGGRESSIVE
+}
+Enum consent_source {
+  AA
+  GMAIL
+  MANUAL
+}
+Enum account_type {
+  SAVINGS
+  CURRENT
+  LOAN
+  CREDIT_CARD
+  TERM_DEPOSIT
+  RECURRING_DEPOSIT
+  EPF
+  NPS
+}
+Enum record_source {
+  AA
+  MANUAL
+  DERIVED
+  GMAIL
+}
+Enum account_status {
+  ACTIVE
+  CLOSED
+  STALE
+}
+Enum txn_direction {
+  DEBIT
+  CREDIT
+}
+Enum card_network {
+  VISA
+  MASTERCARD
+  RUPAY
+  AMEX
+}
+Enum income_type {
+  SALARY
+  BUSINESS
+  RENTAL
+  INTEREST
+  DIVIDEND
+  CAPITAL_GAIN
+  OTHER
+}
+Enum cadence {
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+  IRREGULAR
+}
+Enum income_origin {
+  AA_DETECTED
+  MANUAL
+  PAYSLIP
+}
+Enum necessity {
+  ESSENTIAL
+  DISCRETIONARY
+  DEBT_REPAYMENT
+  SAVINGS_TRANSFER
+}
+Enum expense_origin {
+  AA
+  MANUAL
+  SPLIT
+}
+Enum matcher_type {
+  MERCHANT_REGEX
+  NARRATION_REGEX
+  MCC
+}
+Enum asset_class {
+  EQUITY
+  MUTUAL_FUND
+  BOND
+  NPS
+  EPF
+  FOREIGN_EQUITY
+  CASH
+  GOLD
+  REIT
+}
+Enum corporate_action_type {
+  SPLIT
+  BONUS
+  DIVIDEND
+  MERGER
+}
+Enum al_kind {
+  ASSET
+  LIABILITY
+}
+Enum manual_asset_class {
+  REAL_ESTATE
+  VEHICLE
+  JEWELLERY
+  PRIVATE_EQUITY
+  PERSONAL_LOAN
+  OTHER
+}
+Enum score_band {
+  NEEDS_ATTENTION
+  FAIR
+  GOOD
+  EXCELLENT
+}
+Enum severity {
+  INFO
+  WARN
+  CRITICAL
+}
+Enum consent_status {
+  REQUESTED
+  ACTIVE
+  PAUSED
+  REVOKED
+  EXPIRED
+}
+Enum fetch_status {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+Enum payload_type {
+  DEPOSIT
+  TERM_DEPOSIT
+  RECURRING_DEPOSIT
+  MUTUAL_FUND
+  EQUITIES
+  NPS
+  EPF
+  LOAN
+  CREDIT_CARD
+}
 
 //// ==========================================================================
 //// User  — V1 applied. V2/V3 (email encryption retrofit) proposed, not applied.
@@ -147,12 +266,12 @@ Table transaction {
 Table card_detail {
   id uuid [pk]
   financial_account_id uuid [not null, ref: > financial_account.id]
-  last4 char(4) [not null, note: `CHECK (last4 ~ '^[0-9]{4}$')`]
+  last4 char(4) [not null, note: "CHECK (last4 ~ '^[0-9]{4}$')"]
   network card_network [not null]
   label text
   credit_limit decimal(19,2)
 
-  Note: 'Proposed V4. No PAN/CVV/expiry-day columns ever (PROJECT_OVERVIEW section 4.1) — not \'encrypted\', simply never collected.'
+  Note: 'Proposed V4. No PAN/CVV/expiry-day columns ever (PROJECT_OVERVIEW section 4.1) — simply never collected, not encrypted.'
 }
 
 //// ==========================================================================
@@ -165,7 +284,7 @@ Table income_source {
   name text [not null]
   type income_type [not null]
   cadence cadence [not null]
-  expected_amount decimal(19,2) [note: `CHECK (cadence = 'IRREGULAR' OR expected_amount IS NOT NULL)`]
+  expected_amount decimal(19,2) [note: "CHECK (cadence = 'IRREGULAR' OR expected_amount IS NOT NULL)"]
   currency char(3) [not null, default: 'INR']
   active bool [not null, default: true]
   created_at timestamptz [not null, default: `now()`]
