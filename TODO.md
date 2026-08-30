@@ -31,13 +31,13 @@ Legend for doc refs: `PO`=PROJECT_OVERVIEW, `TS`=TECH_STACK, `DM`=DOMAIN_MODEL, 
 ## Phase 1 — Foundation & environments
 
 ### 1.1 Verify the local stack end-to-end
-- [ ] `docker compose down -v && docker compose up -d`; wait for all healthchecks green
-- [ ] Keycloak: log in at `:8081` (admin/admin), confirm realm `nyvra`, clients `nyvra-web` + `nyvra-api`, users `demo`/`admin`, roles `user`/`admin`
-- [ ] **Add a way to mint a local token**: enable `directAccessGrantsEnabled` on `nyvra-web` in `keycloak/realm-nyvra.json` (local only) *or* add a `nyvra-dev-cli` client; document the `curl` password-grant one-liner
-- [ ] `./mvnw spring-boot:run` (profile `local`) → Flyway `V1` applies, `/actuator/health` = UP
-- [ ] `GET /api/v1/users/me` with `Authorization: Bearer <token>` → 200 and a row appears in `user_profile`
-- [ ] Swagger UI `Authorize` (PKCE) works against local Keycloak
-- **Done when:** a "Local smoke test" section in `README.md` passes from a clean `down -v`.
+- [x] `docker compose up -d` (via `start-local-server.sh`, cold Docker-daemon-down start); wait for all healthchecks green — fixed `--wait` not handling the one-shot `minio-setup` container, and the Keycloak admin bootstrap using `KC_BOOTSTRAP_ADMIN_*` (Keycloak 26+ only) against the pinned 25.0 image
+- [x] Keycloak: log in at `:8081` (admin/admin), confirm realm `nyvra`, clients `nyvra-web` + `nyvra-api`, users `demo`/`admin` present and can authenticate
+- [x] **Add a way to mint a local token**: `directAccessGrantsEnabled` enabled on `nyvra-web` (local only); `curl` password-grant one-liner documented in `README.md`
+- [x] `./mvnw spring-boot:run` (profile `local`) → Flyway `V1` applies, `/actuator/health` = UP — fixed a schema/entity mismatch on `user_profile.base_currency` (`CHAR` vs Hibernate's default `VARCHAR`) that failed `ddl-auto=validate` on every boot
+- [x] `GET /api/v1/users/me` with `Authorization: Bearer <token>` → 200 and a row appears in `user_profile`
+- [ ] Swagger UI `Authorize` (PKCE) works against local Keycloak — not yet verified in a browser
+- **Done when:** a "Local smoke test" section in `README.md` passes from a clean `down -v`. README section written and the underlying curl flow verified; a literal `down -v` re-run and the Swagger UI check are still outstanding.
 
 ### 1.2 CI pipeline
 - [ ] `.github/workflows/ci.yml`: trigger on PR + push to `main`
