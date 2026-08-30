@@ -55,11 +55,12 @@ Legend for doc refs: `PO`=PROJECT_OVERVIEW, `TS`=TECH_STACK, `DM`=DOMAIN_MODEL, 
 - [x] One real repository integration test that runs in CI — `UserProfileRepositoryIntegrationTest`; also added `UserControllerIntegrationTest` to prove the OIDC-mock path end to end
 - **Done when:** `./mvnw verify` runs a Testcontainers test locally and in CI.  Ref: `TS` (Tests row).
 
-### 1.4 `ARCHITECTURE.md`
-- [ ] System context + container diagram (app, Postgres/Timescale, Redis, RabbitMQ, object store, Keycloak, AA provider, price feed)
-- [ ] Module map + **allowed dependency directions** (mirror `DM` context map); which crossings are events vs direct module-API calls
-- [ ] Sync path (dashboard reads) vs async path (ingestion pipeline)
-- [ ] ADR index (the 3 locked decisions from `PO` §4 + auth = Keycloak + any new ones)
+### 1.4 `ARCHITECTURE.md`  ✅ done
+- [x] System context + container diagram (app, Postgres/Timescale, Redis, RabbitMQ, object store, Keycloak, AA provider, price feed)
+- [x] Module map + **allowed dependency directions** (mirror `DM` context map); which crossings are events vs direct module-API calls
+- [x] Sync path (dashboard reads) vs async path (ingestion pipeline)
+- [x] ADR index (the 3 locked decisions from `PO` §4 + auth = Keycloak + this session's testing/CI decisions) — full one-per-file ADRs not set up, index table only, per TODO's own phrasing
+- [x] `ArchitectureTest` enforcement noted as a Phase 2+ follow-up (blocked on modules having real classes to annotate)
 - **Done when:** committed to `docs/engineering/` and linked from `docs/CLAUDE.md`.
 
 ### 1.5 Logging & error baseline

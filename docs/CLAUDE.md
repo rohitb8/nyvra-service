@@ -95,6 +95,7 @@ These come from the planning doc (now captured in `PROJECT_OVERVIEW.md`) and are
 | `engineering/DATABASE_DESIGN.md` | ✅ | Schema, keys, indexes, encryption, partitioning, migration conventions |
 | `engineering/BACKEND_STRUCTURE.md` | ✅ (pre-existing, updated) | Repo layout and package structure. Auth sections rewritten for OIDC |
 | `engineering/CODE_STYLE.md` | ✅ | Java conventions for consistent, human-readable code |
+| `engineering/ARCHITECTURE.md` | ✅ | System diagram, module dependency rules, sync vs async paths, ADR index |
 | **`operations/`** | | Environments, config, deployment |
 | `operations/ENVIRONMENTS.md` | ✅ | Spring profiles `local` / `dev` / `staging` / `prod`, config & secret strategy, promotion flow |
 | `operations/DEV_DEPLOYMENT_PLAN.md` | ✅ | Step-by-step plan for standing up the shared dev environment |
@@ -110,7 +111,6 @@ Priorities: **[P0]** must-have, **[P1]** important (carried over from the planni
 
 | Doc | Pri | Purpose |
 |---|---|---|
-| `ARCHITECTURE.md` | P0 | System diagram, Modulith module map, data flow, sync vs async paths |
 | `API_DESIGN.md` | P0 | REST conventions, pagination, error envelope, idempotency; backed by `nyvra-api-v1.yaml` |
 | `INTEGRATIONS.md` | P0 | AA (Setu/Finvu), broker APIs, price/NAV feeds, Gmail API — auth, rate limits, retries, backpressure |
 | `SECURITY.md` | P0 | Threat model, field-level encryption, secrets, DPDP data-subject rights, audit logging |

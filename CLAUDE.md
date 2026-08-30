@@ -27,6 +27,7 @@ The Angular web client is a separate repo: `nyvra-ui`.
 | Config, profiles, secrets, Keycloak, deployment | `docs/operations/ENVIRONMENTS.md` |
 | Stack versions / library choices / rationale | `docs/engineering/TECH_STACK.md` |
 | Package layout, where a class belongs | `docs/engineering/BACKEND_STRUCTURE.md` |
+| System diagram, module dependency rules, sync vs async paths, ADRs | `docs/engineering/ARCHITECTURE.md` |
 | Standing up the shared dev server | `docs/operations/DEV_DEPLOYMENT_PLAN.md` |
 | Getting ready to deploy | `docs/operations/PRE_DEPLOYMENT_CHECKLIST.md` |
 | Index of everything + planned docs | `docs/CLAUDE.md` |
