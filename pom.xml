@@ -29,6 +29,7 @@
              spring-boot-testcontainers' glue code, which targets the Boot 3.3.x + Testcontainers 1.x
              combination it shipped with). -->
         <testcontainers.version>1.21.4</testcontainers.version>
+        <logstash-logback-encoder.version>9.0</logstash-logback-encoder.version>
         <!-- Must match the Flyway version Spring Boot 3.3.5's BOM manages (flyway-core / -database-postgresql
              on the app classpath), so `./mvnw flyway:migrate` behaves the same as the app's own migration. -->
         <flyway.version>10.10.0</flyway.version>
@@ -120,6 +121,13 @@
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <!-- JSON log output on dev/staging/prod; see logback-spring.xml -->
+        <dependency>
+            <groupId>net.logstash.logback</groupId>
+            <artifactId>logstash-logback-encoder</artifactId>
+            <version>${logstash-logback-encoder.version}</version>
             <scope>runtime</scope>
         </dependency>
 

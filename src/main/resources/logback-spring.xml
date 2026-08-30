@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Profile-aware log format. Levels are controlled by application*.yml (logging.level.*), per
+  docs/operations/ENVIRONMENTS.md section 3 — this file only changes format, not verbosity.
+
+  local + test: pretty, human-readable console — readability while developing/debugging a test wins
+  over literal consistency with the other profiles.
+  dev/staging/prod: structured JSON (one line per event), so log aggregation can index/query on
+  fields — includes traceId/userId automatically since they're in MDC (see
+  common/logging/CorrelationIdFilter, common/logging/UserIdMdcFilter).
+-->
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <springProfile name="local,test">
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder>
+                <pattern>%d{HH:mm:ss.SSS} %-5level [%thread] traceId=%X{traceId:--} userId=%X{userId:--} %logger{36} - %msg%n</pattern>
+            </encoder>
+        </appender>
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="dev,staging,prod">
+        <appender name="CONSOLE_JSON" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                <!-- MDC (traceId, userId) is included automatically. Never add email/PII fields here. -->
+                <customFields>{"app":"nyvra-service"}</customFields>
+            </encoder>
+        </appender>
+        <root level="INFO">
+            <appender-ref ref="CONSOLE_JSON"/>
+        </root>
+    </springProfile>
+</configuration>

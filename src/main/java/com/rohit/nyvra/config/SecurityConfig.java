@@ -4,6 +4,11 @@ import java.util.Collection;
 import java.util.List;
 import java.util.stream.Stream;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.rohit.nyvra.common.logging.CorrelationIdFilter;
+import com.rohit.nyvra.common.logging.UserIdMdcFilter;
+import com.rohit.nyvra.common.security.ApiErrorAccessDeniedHandler;
+import com.rohit.nyvra.common.security.ApiErrorAuthenticationEntryPoint;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -16,6 +21,7 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -30,9 +36,13 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 public class SecurityConfig {
 
     private final List<String> allowedOrigins;
+    private final ObjectMapper objectMapper;
 
-    public SecurityConfig(@Value("${nyvra.cors.allowed-origins:http://localhost:4200}") List<String> allowedOrigins) {
+    public SecurityConfig(
+            @Value("${nyvra.cors.allowed-origins:http://localhost:4200}") List<String> allowedOrigins,
+            ObjectMapper objectMapper) {
         this.allowedOrigins = allowedOrigins;
+        this.objectMapper = objectMapper;
     }
 
     @Bean
@@ -51,7 +61,16 @@ public class SecurityConfig {
                 .permitAll()
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .anyRequest().authenticated())
-            .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
+            .oauth2ResourceServer(oauth2 -> oauth2
+                .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
+                .authenticationEntryPoint(new ApiErrorAuthenticationEntryPoint(objectMapper))
+                .accessDeniedHandler(new ApiErrorAccessDeniedHandler(objectMapper)))
+            // CorrelationIdFilter wraps the whole request, including auth failures; UserIdMdcFilter
+            // runs right after BearerTokenAuthenticationFilter, once the JWT principal is resolved.
+            // Neither is a @Component — registered here explicitly so their position is unambiguous
+            // rather than order-guessed. See their Javadoc for why.
+            .addFilterBefore(new CorrelationIdFilter(), BearerTokenAuthenticationFilter.class)
+            .addFilterAfter(new UserIdMdcFilter(), BearerTokenAuthenticationFilter.class);
         return http.build();
     }
 

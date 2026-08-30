@@ -63,11 +63,11 @@ Legend for doc refs: `PO`=PROJECT_OVERVIEW, `TS`=TECH_STACK, `DM`=DOMAIN_MODEL, 
 - [x] `ArchitectureTest` enforcement noted as a Phase 2+ follow-up (blocked on modules having real classes to annotate)
 - **Done when:** committed to `docs/engineering/` and linked from `docs/CLAUDE.md`.
 
-### 1.5 Logging & error baseline
-- [ ] `logback-spring.xml` with profile guards: pretty console on `local`, JSON on the rest
-- [ ] Correlation/trace id in every log line (Micrometer context propagation); MDC `userId` set post-auth (never log `email`)
-- [ ] Confirm `GlobalExceptionHandler` covers 400 (validation), 401, 403, 404, 409 (conflict), 422 (unprocessable), 429 (rate limit), 500 — with `ApiError` bodies and no leaked messages on 5xx
-- [ ] Assert (test) that tokens / PII / raw payloads never appear in logs
+### 1.5 Logging & error baseline  ✅ done
+- [x] `logback-spring.xml` with profile guards: pretty console on `local` **and `test`** (readability for a human debugging beats literal "JSON on the rest" — see the doc's own comment), JSON (`logstash-logback-encoder`) on `dev`/`staging`/`prod`
+- [x] Correlation/trace id in every log line — went with a plain per-request `CorrelationIdFilter` (MDC `traceId`, echoed as `X-Request-Id`) rather than full Micrometer Tracing, which is still `TS`'s "Planned" row, not "Now"; `userId` set post-auth via a second filter, from the JWT **subject**, never `email`
+- [x] `GlobalExceptionHandler` 400/404/500 unchanged; **fixed** 401/403 — they never actually reached the handler before this (Spring Security's filter-chain defaults intercepted them ahead of MVC dispatch), now `ApiErrorAuthenticationEntryPoint`/`ApiErrorAccessDeniedHandler` cover them; added 409 (`ConflictException` + `DataIntegrityViolationException`, the latter already reachable today), 422 (`UnprocessableEntityException`), 429 (`RateLimitExceededException`) — all `ApiError`-shaped with `traceId`, no leaked exception messages on 500
+- [x] Asserted via two focused unit tests rather than one log-capture integration test: `UserIdMdcFilterTest` (subject in MDC, email/name never do) and `GlobalExceptionHandlerTest` (500 never echoes the original message)
 
 ### 1.6 Secrets strategy sign-off
 - [ ] Document generation of `NYVRA_FIELD_ENCRYPTION_KEY` (`openssl rand -base64 32`) and `NYVRA_BLIND_INDEX_KEY`
