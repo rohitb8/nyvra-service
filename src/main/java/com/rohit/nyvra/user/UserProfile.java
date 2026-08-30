@@ -14,7 +14,7 @@ import jakarta.persistence.Table;
  * A nyvra user, keyed by the Keycloak {@code sub} claim. Never stores credentials.
  *
  * <p>NOTE: {@code email} is stored in plaintext in this skeleton. Per
- * {@code design-docs/DATABASE_DESIGN.md} it must become a field-level-encrypted (🔒) column with a
+ * {@code docs/engineering/DATABASE_DESIGN.md} it must become a field-level-encrypted (🔒) column with a
  * blind-index {@code email_hash} for lookup — follow-up before real data.
  */
 @Entity

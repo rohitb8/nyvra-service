@@ -9,7 +9,7 @@ import org.springframework.modulith.Modulithic;
  *
  * <p>Modular monolith: each top-level package under {@code com.rohit.nyvra} that is not a shared
  * technical package ({@code config}, {@code common}) is a Spring Modulith module. See
- * {@code design-docs/DOMAIN_MODEL.md} for the bounded contexts.
+ * {@code docs/product/DOMAIN_MODEL.md} for the bounded contexts.
  */
 @Modulithic(systemName = "nyvra")
 @SpringBootApplication

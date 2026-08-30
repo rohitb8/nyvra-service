@@ -23,7 +23,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 /**
  * Stateless OAuth2 resource-server security. Keycloak issues the tokens; nyvra only validates them.
- * See {@code design-docs/CLAUDE.md} "Auth model" and {@code design-docs/ENVIRONMENTS.md} section 5.
+ * See {@code docs/CLAUDE.md} "Auth model" and {@code docs/operations/ENVIRONMENTS.md} section 5.
  */
 @Configuration
 @EnableMethodSecurity

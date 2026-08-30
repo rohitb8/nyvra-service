@@ -1,7 +1,8 @@
 # CLAUDE.md — nyvra-service
 
 Entry point for Claude Code (CLI + IDE extensions). Read this first, then open the design doc that
-matches the task. Keep this file short; detail lives in `design-docs/`.
+matches the task. Keep this file short; detail lives in `docs/` (grouped into `docs/product/`,
+`docs/engineering/`, `docs/operations/`).
 
 ## What this is
 
@@ -16,18 +17,22 @@ The Angular web client is a separate repo: `nyvra-ui`.
 
 | If you're working on… | Read |
 |---|---|
-| Anything — vision, scope, the locked decisions | `design-docs/PROJECT_OVERVIEW.md` |
-| Adding/refactoring a module, bounded-context questions | `design-docs/DOMAIN_MODEL.md` |
-| Entities, tables, migrations, indexes, encryption | `design-docs/DATABASE_DESIGN.md` + `design-docs/nyvra-backend-structure.md` |
-| Any financial calculation, thresholds, ratios | `design-docs/FINANCIAL_RULES.md` |
-| The homepage health score | `design-docs/HEALTH_SCORE_SPEC.md` |
-| Config, profiles, secrets, Keycloak, deployment | `design-docs/ENVIRONMENTS.md` |
-| Stack versions / library choices / rationale | `design-docs/TECH_STACK.md` |
-| Package layout, where a class belongs | `design-docs/nyvra-backend-structure.md` |
-| Index of everything + planned docs | `design-docs/CLAUDE.md` |
+| Before starting any work — tooling, accounts, reading order | `docs/PREREQUISITES.md` |
+| Anything — vision, scope, the locked decisions | `docs/product/PROJECT_OVERVIEW.md` |
+| Adding/refactoring a module, bounded-context questions | `docs/product/DOMAIN_MODEL.md` |
+| Entities, tables, migrations, indexes, encryption | `docs/engineering/DATABASE_DESIGN.md` + `docs/engineering/BACKEND_STRUCTURE.md` |
+| Any financial calculation, thresholds, ratios | `docs/product/FINANCIAL_RULES.md` |
+| The homepage health score | `docs/product/HEALTH_SCORE_SPEC.md` |
+| Writing or reviewing Java code | `docs/engineering/CODE_STYLE.md` |
+| Config, profiles, secrets, Keycloak, deployment | `docs/operations/ENVIRONMENTS.md` |
+| Stack versions / library choices / rationale | `docs/engineering/TECH_STACK.md` |
+| Package layout, where a class belongs | `docs/engineering/BACKEND_STRUCTURE.md` |
+| Standing up the shared dev server | `docs/operations/DEV_DEPLOYMENT_PLAN.md` |
+| Getting ready to deploy | `docs/operations/PRE_DEPLOYMENT_CHECKLIST.md` |
+| Index of everything + planned docs | `docs/CLAUDE.md` |
 
-`design-docs/CLAUDE.md` is the fuller index (it also loads automatically when you edit files under
-`design-docs/`). This root file is the always-on summary.
+`docs/CLAUDE.md` is the fuller index (it also loads automatically when you edit files under `docs/`).
+This root file is the always-on summary.
 
 ## Non-negotiable rules
 

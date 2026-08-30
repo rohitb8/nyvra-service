@@ -1,5 +1,5 @@
 # Production-like. Release validation / UAT / perf. Synthetic PII only — no real user data.
-# See design-docs/ENVIRONMENTS.md.
+# See docs/operations/ENVIRONMENTS.md.
 
 spring:
   jpa:

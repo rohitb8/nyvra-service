@@ -1,5 +1,5 @@
 # Production. Real users, real data. Everything sensitive comes from the platform secret manager.
-# See design-docs/ENVIRONMENTS.md.
+# See docs/operations/ENVIRONMENTS.md.
 
 spring:
   jpa:

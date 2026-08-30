@@ -2,7 +2,11 @@
 
 > **Note:** the repo-root [`../CLAUDE.md`](../CLAUDE.md) is the Claude Code entry point (loaded every
 > session). This file is the fuller design-doc index; Claude Code also loads it automatically when you
-> edit files under `design-docs/`.
+> edit files under `docs/`.
+>
+> Docs are grouped by concern: `product/` (vision, domain, the financial "brain"), `engineering/`
+> (stack, schema, structure, code style), `operations/` (environments, deployment). This file and
+> `PREREQUISITES.md` sit at the `docs/` root since both apply across every group.
 >
 > Read this first, then follow the links. This folder describes **intended design** — where it
 > disagrees with code, the code is either wrong or the doc is stale; raise it, don't silently follow one.
@@ -35,13 +39,13 @@ framework** — and tells the user *whether they are in control of their money* 
 | Cache | Redis | Computed dashboards, NAVs, FX rates, AA session state |
 | Async / messaging | RabbitMQ | Ingestion pipeline; move to Kafka only if volume demands |
 | Object storage | S3-compatible (MinIO locally) | Payslips, hike letters, statements |
-| Auth | **Self-hosted Keycloak (OAuth2 / OIDC)** | See "Auth model" below — this supersedes the hand-rolled JWT flow in `nyvra-backend-structure.md` |
+| Auth | **Self-hosted Keycloak (OAuth2 / OIDC)** | See "Auth model" below — this supersedes the hand-rolled JWT flow in `engineering/BACKEND_STRUCTURE.md` |
 | API | REST under `/api/v1`, OpenAPI via springdoc | `nyvra-api-v1.yaml` is the FE contract source of truth |
 | Entity ↔ DTO | MapStruct | Never expose JPA entities over the API |
-| Secrets | Externalised; cloud-agnostic (see `ENVIRONMENTS.md`) | No secrets in the repo or in `application-*.yml` |
+| Secrets | Externalised; cloud-agnostic (see `operations/ENVIRONMENTS.md`) | No secrets in the repo or in `application-*.yml` |
 
-Deployment target is deliberately **cloud-agnostic** for now — see `ENVIRONMENTS.md` for the role-based
-description and the single reference mapping.
+Deployment target is deliberately **cloud-agnostic** for now — see `operations/ENVIRONMENTS.md` for the
+role-based description and the single reference mapping.
 
 ---
 
@@ -67,9 +71,10 @@ These come from the planning doc (now captured in `PROJECT_OVERVIEW.md`) and are
 - User identity in our DB is keyed by the Keycloak `sub` (subject) claim. We store a **profile** row, never credentials.
 - Roles/claims: `ROLE_USER` for everyone; `ROLE_ADMIN` reserved for internal ops tooling.
 - One Keycloak **realm** (`nyvra`) with a per-environment realm config; one public client for the SPA,
-  one confidential client for any server-to-server calls. Details per environment in `ENVIRONMENTS.md`.
+  one confidential client for any server-to-server calls. Details per environment in
+  `operations/ENVIRONMENTS.md`.
 
-> `nyvra-backend-structure.md`'s JWT/`AuthController` sections have been updated to reflect this
+> `engineering/BACKEND_STRUCTURE.md`'s JWT/`AuthController` sections have been updated to reflect this
 > (the doc now points here). Keep the `/api/v1` prefix and versioning rules from that doc.
 
 ---
@@ -79,18 +84,25 @@ These come from the planning doc (now captured in `PROJECT_OVERVIEW.md`) and are
 | Doc | Status | Purpose |
 |---|---|---|
 | `CLAUDE.md` (this file) | ✅ | Index, stack, locked decisions, auth model |
-| `PROJECT_OVERVIEW.md` | ✅ | Vision, goals, scope, explicit out-of-scope, region/compliance, scaling strategy, roadmap |
-| `TECH_STACK.md` | ✅ | Every component with version + rationale (backend, data, async, infra, frontend summary) |
-| `nyvra-backend-structure.md` | ✅ (pre-existing, updated) | Repo layout and package structure. Auth sections rewritten for OIDC |
-| `DOMAIN_MODEL.md` | ✅ | Bounded contexts, aggregates, entities, invariants, context map |
-| `DATABASE_DESIGN.md` | ✅ | Schema, keys, indexes, encryption, partitioning, migration conventions |
-| `FINANCIAL_RULES.md` | ✅ | The parameterised financial logic behind "is the user in control" |
-| `HEALTH_SCORE_SPEC.md` | ✅ | Exact inputs, weights, formula, bands, and worked example for the homepage score |
-| `ENVIRONMENTS.md` | ✅ | Spring profiles `local` / `dev` / `staging` / `prod`, config & secret strategy, promotion flow |
+| `PREREQUISITES.md` | ✅ | What to have installed/set up — and what to read — before writing any code |
+| **`product/`** | | Vision, domain, and the financial "brain" |
+| `product/PROJECT_OVERVIEW.md` | ✅ | Vision, goals, scope, explicit out-of-scope, region/compliance, scaling strategy, roadmap |
+| `product/DOMAIN_MODEL.md` | ✅ | Bounded contexts, aggregates, entities, invariants, context map |
+| `product/FINANCIAL_RULES.md` | ✅ | The parameterised financial logic behind "is the user in control" |
+| `product/HEALTH_SCORE_SPEC.md` | ✅ | Exact inputs, weights, formula, bands, and worked example for the homepage score |
+| **`engineering/`** | | Stack, schema, structure, code conventions |
+| `engineering/TECH_STACK.md` | ✅ | Every component with version + rationale (backend, data, async, infra, frontend summary) |
+| `engineering/DATABASE_DESIGN.md` | ✅ | Schema, keys, indexes, encryption, partitioning, migration conventions |
+| `engineering/BACKEND_STRUCTURE.md` | ✅ (pre-existing, updated) | Repo layout and package structure. Auth sections rewritten for OIDC |
+| `engineering/CODE_STYLE.md` | ✅ | Java conventions for consistent, human-readable code |
+| **`operations/`** | | Environments, config, deployment |
+| `operations/ENVIRONMENTS.md` | ✅ | Spring profiles `local` / `dev` / `staging` / `prod`, config & secret strategy, promotion flow |
+| `operations/DEV_DEPLOYMENT_PLAN.md` | ✅ | Step-by-step plan for standing up the shared dev environment |
+| `operations/PRE_DEPLOYMENT_CHECKLIST.md` | ✅ | Checklist to work through before any deploy |
 
 > **Provenance:** the planning PDF (`Personal Finance App Plan.pdf`) that seeded this repo has been
-> fully decomposed into `PROJECT_OVERVIEW.md` + `TECH_STACK.md` + the docs above, and deleted so there
-> is one source of truth.
+> fully decomposed into `product/PROJECT_OVERVIEW.md` + `engineering/TECH_STACK.md` + the docs above,
+> and deleted so there is one source of truth.
 
 ### Planned / not yet written (add when the project needs them)
 
@@ -114,8 +126,10 @@ Priorities: **[P0]** must-have, **[P1]** important (carried over from the planni
 
 ## Conventions quick reference
 
+Full Java style guide: `engineering/CODE_STYLE.md`. Quick reference:
+
 - **Package by module, then by layer:** `com.rohit.nyvra.<module>.<controller|service|repository|model|dto>`.
-- **Controllers are thin.** All calculation lives in services and is unit-tested against `FINANCIAL_RULES.md` / `HEALTH_SCORE_SPEC.md`.
+- **Controllers are thin.** All calculation lives in services and is unit-tested against `product/FINANCIAL_RULES.md` / `product/HEALTH_SCORE_SPEC.md`.
 - **Money:** `BigDecimal`, scale 2 for INR amounts, scale 6 for unit prices/NAV/FX. Never `double`. Currency code stored explicitly (`INR` default).
 - **Time:** store `Instant` (UTC) for events; store `LocalDate` for accounting dates. User's display timezone is `Asia/Kolkata`.
 - **IDs:** UUID v7 primary keys.

@@ -1,6 +1,6 @@
 # Profile-independent defaults. NO secrets, NO environment specifics here.
 # Environment values come from application-<profile>.yml + environment variables + the secret store.
-# See design-docs/ENVIRONMENTS.md.
+# See docs/operations/ENVIRONMENTS.md.
 
 spring:
   application:

@@ -1,5 +1,5 @@
 # Shared integration environment. Deployed from main by CI. Synthetic data only.
-# All connection details + secrets injected as environment variables. See design-docs/ENVIRONMENTS.md.
+# All connection details + secrets injected as environment variables. See docs/operations/ENVIRONMENTS.md.
 
 spring:
   jpa:

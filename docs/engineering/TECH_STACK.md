@@ -68,7 +68,7 @@ Legend: **Now** = used from day one · **Planned** = adopt when the feature that
 | | | | Own container + own Postgres DB/schema; realm version-controlled as JSON, applied via CI |
 
 Decision record: chosen over hand-rolled JWT (security-critical code we'd own) and over managed IdPs
-(per-MAU cost + external dependency in the login path). See `nyvra-service/design-docs/CLAUDE.md` → Auth model.
+(per-MAU cost + external dependency in the login path). See `nyvra-service/docs/CLAUDE.md` → Auth model.
 
 ---
 

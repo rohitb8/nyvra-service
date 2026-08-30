@@ -7,6 +7,6 @@ target/
 .env
 .env.*
 !.env.example
-design-docs/
+docs/
 README.md
 docker-compose.yml

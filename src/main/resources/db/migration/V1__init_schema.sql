@@ -1,6 +1,6 @@
 -- V1 — initial schema.
 -- Minimal starting point: the User context. Other contexts (Accounts, Income, Expense, Portfolio,
--- Net Worth, Ingestion, Analytics) are added in later migrations following design-docs/DATABASE_DESIGN.md.
+-- Net Worth, Ingestion, Analytics) are added in later migrations following docs/engineering/DATABASE_DESIGN.md.
 --
 -- Conventions (see DATABASE_DESIGN.md):
 --   * UUID primary keys (generated in the app)

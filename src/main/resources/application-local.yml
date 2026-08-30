@@ -1,6 +1,6 @@
 # Local development on a laptop. Values here are safe defaults for the docker-compose stack;
 # override anything via a git-ignored .env file (loaded by your IDE / docker compose).
-# See design-docs/ENVIRONMENTS.md section 9.
+# See docs/operations/ENVIRONMENTS.md section 9.
 
 spring:
   datasource:

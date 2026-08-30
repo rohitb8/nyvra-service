@@ -1,5 +1,5 @@
 # Local dev stack for nyvra-service. The app itself runs on the host (./mvnw spring-boot:run) or is
-# started separately. See design-docs/ENVIRONMENTS.md section 4.
+# started separately. See docs/operations/ENVIRONMENTS.md section 4.
 #
 #   docker compose up -d
 #

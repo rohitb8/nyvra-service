@@ -8,8 +8,9 @@ doc to consult, and **done when**.
 > screen work. `nyvra-ui` design work (its Phase 1) can run fully in parallel starting now.
 
 Legend for doc refs: `PO`=PROJECT_OVERVIEW, `TS`=TECH_STACK, `DM`=DOMAIN_MODEL, `DB`=DATABASE_DESIGN,
-`FR`=FINANCIAL_RULES, `HS`=HEALTH_SCORE_SPEC, `ENV`=ENVIRONMENTS, `STR`=nyvra-backend-structure
-(all in `design-docs/`).
+`FR`=FINANCIAL_RULES, `HS`=HEALTH_SCORE_SPEC, `ENV`=ENVIRONMENTS, `STR`=BACKEND_STRUCTURE
+(`PO`/`DM`/`FR`/`HS` in `docs/product/`, `TS`/`DB`/`STR` in `docs/engineering/`, `ENV` in
+`docs/operations/` — see `docs/CLAUDE.md`).
 
 ---
 
@@ -59,7 +60,7 @@ Legend for doc refs: `PO`=PROJECT_OVERVIEW, `TS`=TECH_STACK, `DM`=DOMAIN_MODEL, 
 - [ ] Module map + **allowed dependency directions** (mirror `DM` context map); which crossings are events vs direct module-API calls
 - [ ] Sync path (dashboard reads) vs async path (ingestion pipeline)
 - [ ] ADR index (the 3 locked decisions from `PO` §4 + auth = Keycloak + any new ones)
-- **Done when:** committed to `design-docs/` and linked from `design-docs/CLAUDE.md`.
+- **Done when:** committed to `docs/engineering/` and linked from `docs/CLAUDE.md`.
 
 ### 1.5 Logging & error baseline
 - [ ] `logback-spring.xml` with profile guards: pretty console on `local`, JSON on the rest

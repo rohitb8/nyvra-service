@@ -2,14 +2,15 @@
 Backend for **nyvra** — a personal-finance "accountant" for the Indian market. Java 21 · Spring Boot 3.3 ·
 Spring Modulith (modular monolith) · PostgreSQL + TimescaleDB · Flyway · OAuth2 resource server (Keycloak).
 
-> Design docs live in [`design-docs/`](design-docs/). Start with
-> [`design-docs/CLAUDE.md`](design-docs/CLAUDE.md) and
-> [`design-docs/PROJECT_OVERVIEW.md`](design-docs/PROJECT_OVERVIEW.md).
+> Design docs live in [`docs/`](docs/), grouped into `product/`, `engineering/`, `operations/`. Start
+> with [`docs/CLAUDE.md`](docs/CLAUDE.md) and [`docs/product/PROJECT_OVERVIEW.md`](docs/product/PROJECT_OVERVIEW.md).
 
 ## Prerequisites
 
 - JDK 21
 - Docker + Docker Compose
+
+Full checklist (accounts, secrets, reading order) in [`docs/PREREQUISITES.md`](docs/PREREQUISITES.md).
 
 ## Run locally
 
@@ -46,7 +47,7 @@ curl -s http://localhost:8080/api/v1/users/me -H "Authorization: Bearer $TOKEN"
 
 Spring profiles: `local`, `dev`, `staging`, `prod` (+ `test` for the test suite).
 Config strategy, secrets, and the promotion flow are in
-[`design-docs/ENVIRONMENTS.md`](design-docs/ENVIRONMENTS.md). No secrets in the repo or in
+[`docs/operations/ENVIRONMENTS.md`](docs/operations/ENVIRONMENTS.md). No secrets in the repo or in
 `application-*.yml`.
 
 ## Layout
