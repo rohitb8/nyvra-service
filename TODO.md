@@ -41,7 +41,7 @@ Legend for doc refs: `PO`=PROJECT_OVERVIEW, `TS`=TECH_STACK, `DM`=DOMAIN_MODEL, 
 
 ### 1.2 CI pipeline
 - [x] `.github/workflows/ci.yml`: trigger on PR + push to `main`
-- [x] Steps: checkout → `actions/setup-java@v4` (temurin 21, maven cache) → `./mvnw -B verify`
+- [x] Steps: checkout → `actions/setup-java@v5` (temurin 21, maven cache) → `./mvnw -B verify`
 - [x] Flyway validation against an ephemeral DB — decided on a `postgres` service (`timescale/timescaledb-ha:pg16`, matching prod); added `flyway-maven-plugin` to `pom.xml` (wasn't there before, despite `ENV` §9 documenting `./mvnw flyway:migrate`) so the check is a real `flyway:migrate` run against an empty DB, not just app-boot side-effect
 - [~] **OpenAPI drift check**: deliberately a guarded placeholder for now, not the full boot+diff — `openapi/nyvra-api-v1.yaml` doesn't exist yet (Phase 3.5), and a real boot-and-diff needs a live/mocked OIDC issuer for `SecurityConfig`'s `JwtDecoder` to resolve, which is Phase 1.3's `mock-oauth2-server`. Revisit once both land.
 - [x] Build the Docker image on `main` (don't push yet)
