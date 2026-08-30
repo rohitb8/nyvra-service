@@ -1,0 +1,519 @@
+// Nyvra — target database schema (DBML)
+// Open in https://dbdiagram.io to view/edit visually.
+//
+// This is the INTENDED TARGET schema, not necessarily what's applied yet. Status per table is noted
+// in its `Note`. The actual, authoritative migration history lives in database/migrations/ (a symlink
+// to src/main/resources/db/migration/ — the real Flyway source Postgres executes).
+//
+// See database/schema.md for how to read this file and database/decisions.md for the rationale
+// behind the conventions used throughout (encryption-from-creation, Money type, partitioning,
+// TimescaleDB hypertables). Full prose column/index spec: docs/engineering/DATABASE_DESIGN.md.
+//
+// Convention note: enums below are DBML sugar for readability in the diagram. The real Postgres
+// columns are TEXT + CHECK (...), never native PG ENUM — see decisions.md / DATABASE_DESIGN.md
+// "Global conventions". Don't take the `Enum` blocks as literal DDL.
+
+Project nyvra {
+  database_type: 'PostgreSQL'
+  Note: 'Personal-finance accountant for the Indian market. Modular monolith, one database.'
+}
+
+//// ==========================================================================
+//// Enums (documentation sugar — physically TEXT + CHECK on every table below)
+//// ==========================================================================
+
+Enum risk_band { CONSERVATIVE BALANCED AGGRESSIVE }
+Enum consent_source { AA GMAIL MANUAL }
+Enum account_type { SAVINGS CURRENT LOAN CREDIT_CARD TERM_DEPOSIT RECURRING_DEPOSIT EPF NPS }
+Enum record_source { AA MANUAL DERIVED GMAIL }
+Enum account_status { ACTIVE CLOSED STALE }
+Enum txn_direction { DEBIT CREDIT }
+Enum card_network { VISA MASTERCARD RUPAY AMEX }
+Enum income_type { SALARY BUSINESS RENTAL INTEREST DIVIDEND CAPITAL_GAIN OTHER }
+Enum cadence { MONTHLY QUARTERLY ANNUAL IRREGULAR }
+Enum income_origin { AA_DETECTED MANUAL PAYSLIP }
+Enum necessity { ESSENTIAL DISCRETIONARY DEBT_REPAYMENT SAVINGS_TRANSFER }
+Enum expense_origin { AA MANUAL SPLIT }
+Enum matcher_type { MERCHANT_REGEX NARRATION_REGEX MCC }
+Enum asset_class { EQUITY MUTUAL_FUND BOND NPS EPF FOREIGN_EQUITY CASH GOLD REIT }
+Enum corporate_action_type { SPLIT BONUS DIVIDEND MERGER }
+Enum al_kind { ASSET LIABILITY }
+Enum manual_asset_class { REAL_ESTATE VEHICLE JEWELLERY PRIVATE_EQUITY PERSONAL_LOAN OTHER }
+Enum score_band { NEEDS_ATTENTION FAIR GOOD EXCELLENT }
+Enum severity { INFO WARN CRITICAL }
+Enum consent_status { REQUESTED ACTIVE PAUSED REVOKED EXPIRED }
+Enum fetch_status { PENDING RUNNING COMPLETED FAILED }
+Enum payload_type { DEPOSIT TERM_DEPOSIT RECURRING_DEPOSIT MUTUAL_FUND EQUITIES NPS EPF LOAN CREDIT_CARD }
+
+//// ==========================================================================
+//// User  — V1 applied. V2/V3 (email encryption retrofit) proposed, not applied.
+//// ==========================================================================
+
+Table user_profile {
+  id uuid [pk]
+  keycloak_subject text [not null, unique, note: 'from OIDC sub claim']
+  email bytea [note: '🔒 proposed V2/V3 — currently plaintext `text`, see decisions.md']
+  email_hash text [unique, note: 'blind index (HMAC-SHA256) — proposed alongside email encryption']
+  display_name text
+  date_of_birth date [note: 'proposed addition — needed for FINANCIAL_RULES age-based allocation targets']
+  base_currency char(3) [not null, default: 'INR', note: 'immutable after first snapshot']
+  dpdp_consent_at timestamptz [note: 'proposed addition']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  Note: 'V1 applied. `email`/`email_hash`/`date_of_birth`/`dpdp_consent_at` are proposed — current applied schema has plain `email text`.'
+}
+
+Table user_preferences {
+  user_id uuid [pk, ref: - user_profile.id]
+  risk_band risk_band [not null, default: 'BALANCED']
+  emergency_fund_months_target decimal(4,1)
+  dashboard_layout jsonb
+  notification_channels jsonb
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  Note: 'V1 applied. 1:1 with user_profile.'
+}
+
+Table data_consent_record {
+  id uuid [pk]
+  user_id uuid [not null, ref: > user_profile.id]
+  purpose text [not null]
+  scope jsonb
+  source consent_source [not null]
+  granted_at timestamptz [not null, default: `now()`]
+  expires_at timestamptz
+  revoked_at timestamptz
+
+  indexes {
+    (user_id, source, granted_at) [name: 'idx_data_consent_record_user']
+  }
+
+  Note: 'V1 applied. Append-only (DPDP audit) — no updates except setting revoked_at once.'
+}
+
+//// ==========================================================================
+//// Accounts — proposed V4. None applied yet.
+//// ==========================================================================
+
+Table financial_account {
+  id uuid [pk]
+  user_id uuid [not null, ref: > user_profile.id]
+  type account_type [not null]
+  institution text
+  masked_number bytea [note: '🔒 encrypted from creation']
+  label text
+  currency char(3) [not null, default: 'INR']
+  current_balance decimal(19,2) [not null]
+  balance_as_of timestamptz [not null]
+  source record_source [not null]
+  status account_status [not null]
+  deleted_at timestamptz
+
+  indexes {
+    (user_id, status) [name: 'idx_financial_account_user_status']
+    (user_id, type) [name: 'idx_financial_account_user_type']
+  }
+
+  Note: 'Proposed V4. Never stores full account number/credentials — masked_number only (PROJECT_OVERVIEW section 4.1).'
+}
+
+Table transaction {
+  id uuid
+  value_date date
+  account_id uuid [not null, ref: > financial_account.id]
+  user_id uuid [not null, ref: > user_profile.id, note: 'denormalised for query locality']
+  booking_date date [not null]
+  amount decimal(19,2) [not null, note: 'signed']
+  currency char(3) [not null, default: 'INR', note: 'denormalised from financial_account so amount can be a Money value without a join']
+  direction txn_direction [not null]
+  narration bytea [note: '🔒 encrypted from creation']
+  counterparty bytea [note: '🔒 encrypted from creation']
+  balance_after decimal(19,2)
+  source record_source [not null]
+  dedup_key text [not null, note: 'hash(accountRef, valueDate, amount, narration)']
+
+  indexes {
+    (id, value_date) [pk]
+    (dedup_key, value_date) [unique, name: 'uq_transaction_dedup']
+    (user_id, value_date) [name: 'idx_transaction_user_date']
+    (account_id, value_date) [name: 'idx_transaction_account_date']
+  }
+
+  Note: 'Proposed V4. Declaratively RANGE-partitioned by value_date, monthly, + a DEFAULT partition. Immutable once persisted — corrections are new reversing rows. High-volume table.'
+}
+
+Table card_detail {
+  id uuid [pk]
+  financial_account_id uuid [not null, ref: > financial_account.id]
+  last4 char(4) [not null, note: `CHECK (last4 ~ '^[0-9]{4}$')`]
+  network card_network [not null]
+  label text
+  credit_limit decimal(19,2)
+
+  Note: 'Proposed V4. No PAN/CVV/expiry-day columns ever (PROJECT_OVERVIEW section 4.1) — not \'encrypted\', simply never collected.'
+}
+
+//// ==========================================================================
+//// Income — proposed V5. None applied yet.
+//// ==========================================================================
+
+Table income_source {
+  id uuid [pk]
+  user_id uuid [not null, ref: > user_profile.id]
+  name text [not null]
+  type income_type [not null]
+  cadence cadence [not null]
+  expected_amount decimal(19,2) [note: `CHECK (cadence = 'IRREGULAR' OR expected_amount IS NOT NULL)`]
+  currency char(3) [not null, default: 'INR']
+  active bool [not null, default: true]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  Note: 'Proposed V5.'
+}
+
+Table income_entry {
+  id uuid [pk]
+  source_id uuid [not null, ref: > income_source.id]
+  user_id uuid [not null, ref: > user_profile.id]
+  period_start date [not null]
+  period_end date [not null]
+  gross_amount decimal(19,2) [not null]
+  net_amount decimal(19,2) [not null, note: 'CHECK (net_amount <= gross_amount)']
+  received_on date [not null]
+  linked_transaction_id uuid [ref: > transaction.id]
+  origin income_origin [not null]
+
+  indexes {
+    (user_id, period_start) [name: 'idx_income_entry_user_period']
+  }
+
+  Note: 'Proposed V5. EXCLUDE USING gist: no overlapping [period_start, period_end] per source_id — needs CREATE EXTENSION btree_gist.'
+}
+
+Table payslip_document {
+  id uuid [pk]
+  income_entry_id uuid [not null, ref: > income_entry.id]
+  object_key text [not null, note: 'document body in MinIO/S3, not the DB']
+  parsed_fields bytea [note: '🔒 encrypted from creation']
+  uploaded_at timestamptz [not null, default: `now()`]
+
+  Note: 'Proposed V5.'
+}
+
+//// ==========================================================================
+//// Expenses — proposed V6. None applied yet.
+//// ==========================================================================
+
+Table category {
+  id uuid [pk]
+  name text [not null]
+  parent_id uuid [ref: > category.id, note: 'self-referential']
+  necessity_default necessity
+  system bool [not null, default: false]
+
+  indexes {
+    (parent_id, name) [unique, name: 'uq_category_parent_name']
+  }
+
+  Note: 'Proposed V6. System tree seeded idempotently in V6.1__seed_categories.sql. Users add custom children only.'
+}
+
+Table categorisation_rule {
+  id uuid [pk]
+  user_id uuid [ref: > user_profile.id, note: 'null = system rule']
+  matcher_type matcher_type [not null]
+  matcher_value text [not null]
+  category_id uuid [not null, ref: > category.id]
+  necessity necessity [not null]
+  priority integer [not null, note: 'higher wins; user rules override system rules']
+
+  indexes {
+    (user_id, priority) [name: 'idx_categorisation_rule_user_priority']
+    (matcher_type) [name: 'idx_categorisation_rule_matcher_type']
+  }
+
+  Note: 'Proposed V6.'
+}
+
+Table expense {
+  id uuid
+  date date
+  user_id uuid [not null, ref: > user_profile.id]
+  transaction_id uuid [ref: > transaction.id, note: 'null when manually entered']
+  parent_expense_id uuid [ref: > expense.id, note: 'for splits, self-referential']
+  amount decimal(19,2) [not null]
+  currency char(3) [not null, default: 'INR']
+  category_id uuid [not null, ref: > category.id]
+  subcategory_id uuid [ref: > category.id]
+  merchant text
+  necessity necessity [not null]
+  origin expense_origin [not null]
+  excluded_from_habits bool [not null, default: false]
+
+  indexes {
+    (id, date) [pk]
+    (user_id, date) [name: 'idx_expense_user_date']
+    (user_id, category_id, date) [name: 'idx_expense_user_category_date']
+    (parent_expense_id) [name: 'idx_expense_parent']
+  }
+
+  Note: 'Proposed V6. Declaratively RANGE-partitioned by date, monthly, + DEFAULT partition. Split invariant (children sum = parent) enforced in the service layer + nightly reconciliation, not a DB constraint. High-volume table.'
+}
+
+Table spending_habit_snapshot {
+  id uuid [pk]
+  user_id uuid [not null, ref: > user_profile.id]
+  period_month date [not null, note: 'first of month']
+  by_category_pct jsonb
+  essential_pct decimal(5,2)
+  discretionary_pct decimal(5,2)
+  total_spend decimal(19,2)
+  computed_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (user_id, period_month) [unique, name: 'uq_spending_habit_snapshot_user_month']
+  }
+
+  Note: 'Proposed V6. Recomputed on any expense change in the period.'
+}
+
+//// ==========================================================================
+//// Portfolio — proposed V7. None applied yet. First hypertables in the sequence.
+//// ==========================================================================
+
+Table instrument {
+  id uuid [pk]
+  isin char(12) [unique]
+  symbol text
+  name text
+  asset_class asset_class [not null]
+  currency char(3) [not null]
+  country char(2)
+
+  Note: 'Proposed V7. Reference data — no user_id, not user-owned.'
+}
+
+Table portfolio_holding {
+  id uuid [pk]
+  user_id uuid [not null, ref: > user_profile.id]
+  instrument_id uuid [not null, ref: > instrument.id]
+  asset_class asset_class [not null]
+  quantity decimal(19,6) [not null, note: 'CHECK (quantity >= 0)']
+  avg_cost decimal(19,6)
+  currency char(3) [not null]
+  account_id uuid [ref: > financial_account.id]
+  source record_source [not null]
+  opened_at timestamptz [not null, default: `now()`]
+  closed_at timestamptz [note: 'quantity = 0 and closed_at set = closed position, kept for XIRR history']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (user_id) [name: 'idx_portfolio_holding_user_open']
+    (user_id, asset_class) [name: 'idx_portfolio_holding_user_asset_class']
+  }
+
+  Note: 'Proposed V7.'
+}
+
+Table corporate_action {
+  id uuid [pk]
+  instrument_id uuid [not null, ref: > instrument.id]
+  type corporate_action_type [not null]
+  ex_date date [not null]
+  ratio decimal(19,6)
+  applied_at timestamptz
+
+  Note: 'Proposed V7. Adjusts quantity/avg_cost on affected holdings deterministically.'
+}
+
+Table price_quote {
+  instrument_id uuid [not null, ref: > instrument.id]
+  as_of timestamptz [not null]
+  price decimal(19,6) [not null]
+  source record_source [not null]
+
+  indexes {
+    (instrument_id, as_of) [pk]
+  }
+
+  Note: 'Proposed V7. TimescaleDB hypertable from creation, 7-day chunks. Continuous aggregate price_quote_daily added once the price feed is live (Phase 5) — not part of this migration.'
+}
+
+Table valuation_snapshot {
+  user_id uuid [not null, ref: > user_profile.id]
+  as_of timestamptz [not null]
+  by_asset_class jsonb
+  total_value decimal(19,2)
+  invested_value decimal(19,2)
+  unrealised_gain decimal(19,2)
+  xirr decimal(9,4)
+
+  indexes {
+    (user_id, as_of) [pk]
+  }
+
+  Note: 'Proposed V7. Hypertable from creation, 30-day chunks.'
+}
+
+//// ==========================================================================
+//// Net Worth — proposed V8. Downstream of Accounts/Income/Portfolio/Expenses.
+//// ==========================================================================
+
+Table net_worth_snapshot {
+  user_id uuid [not null, ref: > user_profile.id]
+  as_of timestamptz [not null]
+  total_assets decimal(19,2) [not null]
+  total_liabilities decimal(19,2) [not null]
+  net_worth decimal(19,2) [not null, note: 'CHECK (net_worth = total_assets - total_liabilities)']
+  breakdown jsonb
+  contributing_sources jsonb
+
+  indexes {
+    (user_id, as_of) [pk]
+  }
+
+  Note: 'Proposed V8. Hypertable from creation, 30-day chunks. At most one row per (user, as_of date); event-driven recompute + a guaranteed daily job so trends have no gaps.'
+}
+
+Table manual_asset_liability {
+  id uuid [pk]
+  user_id uuid [not null, ref: > user_profile.id]
+  kind al_kind [not null]
+  class manual_asset_class [not null]
+  label text
+  value decimal(19,2) [not null]
+  value_as_of date [not null]
+  revaluation_cadence interval
+  deleted_at timestamptz
+
+  indexes {
+    (user_id) [name: 'idx_manual_asset_liability_user']
+  }
+
+  Note: 'Proposed V8. Flagged STALE in the app once revaluation_cadence has elapsed since value_as_of.'
+}
+
+//// ==========================================================================
+//// Analytics + Health Score — proposed V9. Downstream of everything above.
+//// ==========================================================================
+
+Table health_score {
+  user_id uuid [not null, ref: > user_profile.id]
+  as_of timestamptz [not null]
+  overall decimal(5,2) [not null, note: 'CHECK (overall BETWEEN 0 AND 100)']
+  band score_band [not null]
+  sub_scores jsonb [not null]
+  confidence decimal(4,3)
+  inputs_hash text [note: 'skip recompute when unchanged']
+
+  indexes {
+    (user_id, as_of) [pk]
+  }
+
+  Note: 'Proposed V9. Hypertable from creation, 90-day chunks. Implements HEALTH_SCORE_SPEC.md — this table stores the output, never invents the formula.'
+}
+
+Table insight {
+  id uuid [pk]
+  user_id uuid [not null, ref: > user_profile.id]
+  rule_id text [not null]
+  severity severity [not null]
+  message text [not null]
+  evidence jsonb
+  raised_at timestamptz [not null, default: `now()`]
+  dismissed_at timestamptz
+  superseded_at timestamptz
+
+  indexes {
+    (user_id, raised_at) [name: 'idx_insight_user_raised']
+  }
+
+  Note: 'Proposed V9. No duplicate active insight per rule_id — superseded on change.'
+}
+
+Table dashboard_summary_cache {
+  user_id uuid [pk, ref: - user_profile.id]
+  payload jsonb
+  computed_at timestamptz [not null, default: `now()`]
+
+  Note: 'Proposed V9. Redis is primary; this is the durable rebuild source only.'
+}
+
+//// ==========================================================================
+//// Ingestion — proposed V10. Feeds Accounts/Income/Portfolio/Expenses via
+//// published EVENTS, not foreign keys — see ARCHITECTURE.md's module rules.
+//// ==========================================================================
+
+Table aggregator_consent {
+  id uuid [pk]
+  user_id uuid [not null, ref: > user_profile.id]
+  aa_handle text [not null]
+  fip_list jsonb
+  consent_handle text
+  consent_id text [unique]
+  status consent_status [not null]
+  data_range_from date
+  data_range_to date
+  frequency text
+  expires_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (user_id, status) [name: 'idx_aggregator_consent_user_status']
+    (expires_at) [name: 'idx_aggregator_consent_expires_active']
+  }
+
+  Note: 'Proposed V10. State machine: REQUESTED -> ACTIVE -> (PAUSED <-> ACTIVE) -> REVOKED|EXPIRED. No fetch unless ACTIVE.'
+}
+
+Table fetch_session {
+  id uuid [pk]
+  consent_id uuid [not null, ref: > aggregator_consent.id]
+  session_id text
+  fi_types jsonb
+  status fetch_status [not null]
+  requested_at timestamptz
+  completed_at timestamptz
+  error text
+  dedup_key text [unique, note: 'hash(consent_id, data_range_from, data_range_to)']
+
+  indexes {
+    (consent_id, requested_at) [name: 'idx_fetch_session_consent_requested']
+  }
+
+  Note: 'Proposed V10. Idempotent per (consentId, dataRange); retried with backoff.'
+}
+
+Table raw_financial_record {
+  id uuid [pk]
+  fetch_session_id uuid [not null, ref: > fetch_session.id]
+  fip_id text
+  account_ref text [note: 'masked']
+  payload_type payload_type [not null]
+  raw_json bytea [note: '🔒 encrypted from creation — most sensitive table in the system']
+  received_at timestamptz [not null, default: `now()`]
+  purge_after date [not null]
+
+  indexes {
+    (fetch_session_id) [name: 'idx_raw_financial_record_session']
+    (purge_after) [name: 'idx_raw_financial_record_purge']
+  }
+
+  Note: 'Proposed V10. Hard-deleted by a scheduled job once purge_after < today AND normalisation succeeded.'
+}
+
+Table normalisation_run {
+  id uuid [pk]
+  fetch_session_id uuid [not null, ref: > fetch_session.id]
+  produced_events integer
+  unmapped jsonb
+  status text
+  created_at timestamptz [not null, default: `now()`]
+
+  Note: 'Proposed V10. Deterministic + re-runnable — downstream dedup keys prevent double-counting.'
+}

@@ -21,6 +21,7 @@ The Angular web client is a separate repo: `nyvra-ui`.
 | Anything — vision, scope, the locked decisions | `docs/product/PROJECT_OVERVIEW.md` |
 | Adding/refactoring a module, bounded-context questions | `docs/product/DOMAIN_MODEL.md` |
 | Entities, tables, migrations, indexes, encryption | `docs/engineering/DATABASE_DESIGN.md` + `docs/engineering/BACKEND_STRUCTURE.md` |
+| Changing the schema | `database/schema.dbml` is the target — edit it, then run the `/db-sync` skill. See `database/schema.md` + `database/decisions.md` |
 | Any financial calculation, thresholds, ratios | `docs/product/FINANCIAL_RULES.md` |
 | The homepage health score | `docs/product/HEALTH_SCORE_SPEC.md` |
 | Writing or reviewing Java code | `docs/engineering/CODE_STYLE.md` |
