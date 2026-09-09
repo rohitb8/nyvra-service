@@ -79,86 +79,51 @@ Legend for doc refs: `PO`=PROJECT_OVERVIEW, `TS`=TECH_STACK, `DM`=DOMAIN_MODEL, 
 
 ## Phase 2 — Database design finalized
 
-Per `DB`. For every migration also add: JPA entity, Spring Data repository, mapper (if a DTO exists
-yet), and a repository slice test. Keep `ddl-auto=validate` — Flyway owns the schema.
+**The schema itself is no longer designed inline in this file.** `database/schema.dbml` is the
+authoritative target schema (editable visually at dbdiagram.io); `database/decisions.md` records the
+four conventions decisions below with full rationale; `database/schema.md` explains how the pieces fit
+together. This section only tracks *status* — build order and done-when criteria — not column lists.
+Once `schema.dbml` is signed off, run the `/db-sync` skill (`.claude/skills/db-sync/`) to generate the
+actual migrations + entities; it diffs `schema.dbml` against the real migration history and current
+JPA entities and never assumes the entities are already right.
 
-### 2.1 Conventions lock-in
-- [ ] UUID **v7** helper (add `com.github.f4b6a3:uuid-creator`; `Uuids.timeOrdered()`), used by all `@Id` assignment
-- [ ] `AbstractEntity` `@MappedSuperclass`: `id`, `createdAt`, `updatedAt` (`@PrePersist`/`@PreUpdate`), optional `@Version` for optimistic locking — decide per aggregate
-- [ ] Money: `@Column(precision = 19, scale = 2)` for amounts, `scale = 6` for prices/NAV/FX/qty; `BigDecimal` only; a `Money` value type (amount + `Currency`) — decide vs plain columns; document
-- [ ] Enums: `@Enumerated(STRING)` + a DB `CHECK` in the migration (not native PG enum)
-- [ ] Physical naming strategy = snake_case (Spring default); explicit `@Table(name=...)` singular
-- [ ] Soft delete: `deletedAt` + `@SQLRestriction("deleted_at is null")` where applicable + partial indexes
-- [ ] `@Transactional(readOnly = true)` default on read services
+**Status: schema design in progress** (`database/schema.dbml` under revision) — nothing beyond V1 is
+built yet.
 
-### 2.2 `V2` — Accounts + transactions  (`DB` → Accounts)
-- [ ] Tables: `financial_account`, `transaction` (declarative `RANGE (value_date)` **monthly partitions**), `card_detail`
-- [ ] **Partition management**: create parent + partitions for current month ± N; add `pg_partman` **or** an app `@Scheduled` job **or** rolling migrations to create future partitions — decide. *Must be in place before ingestion writes.*
-- [ ] Unique index `(dedup_key, value_date)` on `transaction`; indexes `(user_id, value_date DESC)`, `(account_id, value_date DESC)`
-- [ ] `CHECK (last4 ~ '^[0-9]{4}$')` on `card_detail`; **no PAN/CVV/expiry-day columns ever** (`PO` §4.1)
-- [ ] Entities `FinancialAccount`, `Transaction`, `CardDetail`; paged repository queries
-- **Done when:** test persists an account + 1000 transactions spanning 2 monthly partitions; a paged list query returns correctly.
+### 2.1 Conventions — decided, not yet implemented
+Recorded in `database/decisions.md` (rationale) — implementation is a `/db-sync` output once schema
+work starts, not a standalone task:
+- [x] **Decided:** UUID v7 (`com.github.f4b6a3:uuid-creator`), generated in the app for every `@Id`.
+- [x] **Decided:** `AbstractEntity` `@MappedSuperclass` (`id`, `createdAt`, `updatedAt`) — `UserProfile` gets retrofitted to extend it.
+- [x] **Decided:** a shared `Money` `@Embeddable` (amount + currency) on every money-bearing field, not plain `BigDecimal`+`String` pairs — `decisions.md` §4.
+- [x] **Decided:** partition management for `transaction`/`expense` via an app-level `@Scheduled` + ShedLock job, not `pg_partman` — `decisions.md` §2.
+- [x] **Decided:** `price_quote`/`valuation_snapshot`/`net_worth_snapshot`/`health_score` become TimescaleDB hypertables in their own creation migration, not a separate later conversion — `decisions.md` §3.
+- [x] **Decided:** every new (not-yet-applied) table encrypts its 🔒 columns from creation; only `user_profile.email` (already applied in V1) gets a genuine two-step retrofit — `decisions.md` §1.
+- [ ] Enums: `@Enumerated(STRING)` + a DB `CHECK` in the migration (not native PG enum) — unchanged, no open question here.
+- [ ] `@Transactional(readOnly = true)` default on read services.
 
-### 2.3 `V3` — Income  (`DB` → Income)
-- [ ] `CREATE EXTENSION IF NOT EXISTS btree_gist` (needed for the exclusion constraint)
-- [ ] `income_source` (`CHECK` on type/cadence; `CHECK (cadence='IRREGULAR' OR expected_amount IS NOT NULL)`)
-- [ ] `income_entry` (`CHECK (net_amount <= gross_amount)`; `EXCLUDE USING gist` no-overlap of `[period_start, period_end]` per `source_id`)
-- [ ] `payslip_document` (`object_key` only; body in MinIO)
-- [ ] Entities + repos
+### 2.2 Migration build order
+Per `database/schema.dbml`'s notes on which migration each table belongs to. One migration per
+context, in dependency order (mirrors `docs/engineering/ARCHITECTURE.md`'s module map):
 
-### 2.4 `V4` — Expense + category  (`DB` → Expenses)
-- [ ] `category` (self-FK `parent_id`, `UNIQUE (parent_id, name)`, `system bool`)
-- [ ] `categorisation_rule` (`matcher_type`/`matcher_value`, `necessity`, `priority`)
-- [ ] `expense` (`RANGE (date)` **monthly partitions**, `parent_expense_id` for splits, `necessity CHECK`, `excluded_from_habits`)
-- [ ] `spending_habit_snapshot` (`UNIQUE (user_id, period_month)`, `by_category_pct jsonb`)
-- [ ] `V4.1__seed_categories.sql` — idempotent (`ON CONFLICT DO NOTHING`) system tree with `necessity_default` (Housing, Utilities, Groceries, Transport, Health, Insurance, Loan EMI, Education, Entertainment, Shopping, Eating Out, Savings Transfer, Misc, …)
-- [ ] Entities + repos
+- [ ] `V2`/`V3` — retrofit `user_profile.email` to encrypted (the one exception to "encrypt from creation", since it already has real rows)
+- [ ] `V4` — Accounts (`financial_account`, `transaction`, `card_detail`) — **done when:** test persists an account + 1000 transactions spanning 2 monthly partitions; a paged list query returns correctly
+- [ ] `V5` — Income (`income_source`, `income_entry`, `payslip_document`) — needs `CREATE EXTENSION IF NOT EXISTS btree_gist`
+- [ ] `V6` — Expenses (`category`, `categorisation_rule`, `expense`, `spending_habit_snapshot`) + `V6.1__seed_categories.sql`
+- [ ] `V7` — Portfolio (`instrument`, `portfolio_holding`, `corporate_action`, `price_quote`, `valuation_snapshot`) — first hypertables; `CREATE EXTENSION IF NOT EXISTS timescaledb` here
+- [ ] `V8` — Net Worth (`net_worth_snapshot`, `manual_asset_liability`)
+- [ ] `V9` — Analytics (`health_score`, `insight`, `dashboard_summary_cache`)
+- [ ] `V10` — Ingestion (`aggregator_consent`, `fetch_session`, `raw_financial_record`, `normalisation_run`) + the `raw_financial_record` retention job
 
-### 2.5 `V5` — Portfolio  (`DB` → Portfolio)
-- [ ] `instrument` (`isin CHAR(12) UNIQUE` when present, `asset_class CHECK`, `country`)
-- [ ] `portfolio_holding` (`CHECK (quantity >= 0)`, `avg_cost`, `opened_at`/`closed_at`)
-- [ ] `corporate_action` (`type CHECK`, `ex_date`, `ratio`)
-- [ ] Decide whether to seed common instruments (AMFI scheme list?) or populate via feed — probably minimal seed
-- [ ] Entities + repos
+For every migration: JPA entity, Spring Data repository, and a repository slice test extending
+`AbstractIntegrationTest`. Keep `ddl-auto=validate` — Flyway owns the schema.
 
-### 2.6 `V6` — Net worth  (`DB` → Net Worth)
-- [ ] `net_worth_snapshot` (`CHECK (net_worth = total_assets - total_liabilities)`, `breakdown jsonb`, `contributing_sources jsonb`) — hypertable conversion in 2.9
-- [ ] `manual_asset_liability` (`kind`/`class CHECK`, `value_as_of`, `revaluation_cadence interval`, `deleted_at`)
-- [ ] Entities + repos
+### 2.3 Deferred out of this phase (tracked in `database/decisions.md`'s "Open" note)
+- [ ] Continuous aggregates (`price_quote_daily`, `net_worth_monthly`, trend rollups) — land alongside
+  the code that first *writes* to each hypertable (Phase 4/5), not as part of the schema pass.
+- [ ] `add_retention_policy` on raw `price_quote` history, once there's enough of it to matter.
 
-### 2.7 `V7` — Analytics  (`DB` → Analytics)
-- [ ] `health_score` (`CHECK (overall BETWEEN 0 AND 100)`, `band CHECK`, `sub_scores jsonb NOT NULL`, `confidence`, `inputs_hash`) — hypertable in 2.9
-- [ ] `insight` (`severity CHECK`, `evidence jsonb`, `raised_at`, `dismissed_at`, `superseded_at`)
-- [ ] `dashboard_summary_cache` (`user_id PK`, `payload jsonb`, `computed_at`)
-- [ ] Entities + repos
-
-### 2.8 `V8` — Ingestion  (`DB` → Ingestion)
-- [ ] `aggregator_consent` (`status CHECK` state-machine values, `consent_id UNIQUE`, `data_range_*`, `frequency`, `expires_at`); index `(expires_at) WHERE status='ACTIVE'`
-- [ ] `fetch_session` (`dedup_key UNIQUE`, `status`, `error`)
-- [ ] `raw_financial_record` (`raw_json bytea` 🔒, `payload_type CHECK`, `purge_after date NOT NULL`)
-- [ ] `normalisation_run` (`produced_events`, `unmapped jsonb`)
-- [ ] Entities + repos
-- [ ] **Retention job**: `@Scheduled` delete of `raw_financial_record WHERE purge_after < today AND` normalisation succeeded
-
-### 2.9 `V9` — TimescaleDB enablement
-- [ ] `CREATE EXTENSION IF NOT EXISTS timescaledb`
-- [ ] `create_hypertable` for `price_quote` (chunk 7d), `valuation_snapshot` (30d), `net_worth_snapshot` (30d), `health_score` (90d) — use `migrate_data => true` if the table already has rows
-- [ ] Continuous aggregates: `price_quote_daily` (last price/instrument/day), `net_worth_monthly`, trend rollups for spend/income/score — with `add_continuous_aggregate_policy`
-- [ ] `add_retention_policy` where appropriate (e.g. raw `price_quote` older than N years)
-- [ ] **Gotcha:** managed Postgres may not offer the Timescale extension → Timescale Cloud or self-install; note in `ENV` §7. Tests + local already use the `timescaledb-ha` image.
-- **Done when:** hypertables show in `timescaledb_information.hypertables`; a trend query hits a continuous aggregate (verified via `EXPLAIN`).
-
-### 2.10 Field-level encryption  (`DB` → "Field-level encryption")
-- [ ] Crypto util: AES-256-GCM, random 96-bit nonce, key from `NYVRA_FIELD_ENCRYPTION_KEY` (+ `_PREVIOUS` for rotation)
-- [ ] JPA `AttributeConverter<String, byte[]> EncryptedStringConverter`
-- [ ] Blind index: `HMAC-SHA256(normalised value, NYVRA_BLIND_INDEX_KEY)` → e.g. `email_hash`
-- [ ] `V10__encrypt_pii.sql` (add `bytea` + hash columns) → backfill job (`ApplicationRunner`, feature-flagged) → `V11__drop_plaintext.sql` (**two-step expand/contract**, across two releases)
-- [ ] Apply to: `user_profile.email` (+ `email_hash`), `transaction.narration` / `counterparty`, `raw_financial_record.raw_json`, `payslip_document.parsed_fields`, `financial_account.masked_number`
-- [ ] 🔒 columns must **not** appear in `WHERE`/`ORDER BY` — use the hash column for lookups
-- [ ] Runbook: rotation (set `_PREVIOUS`, deploy, run re-encrypt job, drop `_PREVIOUS`); **key backed up separately from DB backups**
-- **Done when:** round-trip test (persist → DB shows `bytea` → read back equal) + lookup-by-email via hash both pass.
-
-### 2.11 Query patterns
+### 2.4 Query patterns
 - [ ] Every list query leads with `(user_id, <sort_date> DESC)` + `Pageable`; add the composite indexes
 - [ ] No N+1 (entity graphs / fetch joins); assert with a query-count test on hot paths
 - [ ] Filterable lists via Spring Data `Specification` (decide vs Querydsl)

@@ -3,6 +3,14 @@
 PostgreSQL 16 + TimescaleDB. One database, schema-per-concern optional; tables listed here by
 bounded context (see `DOMAIN_MODEL.md`). This doc is the reference the Flyway migrations implement.
 
+> **Companion files:** `../../database/schema.dbml` is the same schema in DBML (open at
+> [dbdiagram.io](https://dbdiagram.io) to view/edit visually) and is the file to edit when proposing a
+> schema change — `database/schema.md` explains the workflow. `../../database/decisions.md` records
+> the rationale behind the conventions below (encryption-from-creation, partition management,
+> hypertable timing, the `Money` value type). Keep this doc and `schema.dbml` in sync when either
+> changes — this file has the prose-level detail (`CHECK` clauses, exact indexes) `schema.dbml` only
+> summarizes.
+
 ---
 
 ## Global conventions
@@ -31,6 +39,10 @@ bounded context (see `DOMAIN_MODEL.md`). This doc is the reference the Flyway mi
 - TimescaleDB `create_hypertable` and `add_continuous_aggregate_policy` calls live in migrations too.
 - Destructive changes (`DROP COLUMN`, type narrowing) require a two-step deploy: stop writing → migrate → drop, across two releases.
 - Seed data (system categories, instrument reference) goes in `V<n>__seed_*.sql`, idempotent (`INSERT ... ON CONFLICT DO NOTHING`).
+- **Partition management** for `transaction`/`expense` (the only monthly-partitioned, high-volume
+  tables): an app-level `@Scheduled` + ShedLock job keeps partitions a few months ahead with plain
+  `CREATE TABLE ... PARTITION OF ...` DDL, not the `pg_partman` extension — see `database/decisions.md`
+  §2 for why. Both tables also get a `DEFAULT` partition as a safety net.
 
 ---
 
@@ -39,6 +51,12 @@ bounded context (see `DOMAIN_MODEL.md`). This doc is the reference the Flyway mi
 Columns marked 🔒 are encrypted at the application layer (AES-GCM, key from the environment's secret
 store — see `ENVIRONMENTS.md`) before insert, decrypted on read. They are stored as `BYTEA`.
 They must **not** be used in `WHERE`/`ORDER BY`; provide a separate hashed/blind-index column if lookup is needed.
+
+**Timing:** every table below that isn't applied yet encrypts its 🔒 columns **from its first
+migration** — there's no existing data to protect, so the usual retrofit dance (add encrypted column →
+backfill → drop plaintext, across two releases) would be pure overhead. The one exception is
+`user_profile.email`, which already exists with real rows (applied in V1) and genuinely needs that
+two-step treatment. See `database/decisions.md` §1.
 
 | Column | Table | Why |
 |---|---|---|
@@ -118,6 +136,7 @@ Index: `(user_id, status) WHERE deleted_at IS NULL`, `(user_id, type)`.
 | user_id | uuid | denormalised for query locality |
 | booking_date / value_date | date | |
 | amount | numeric(19,2) | signed |
+| currency | char(3) NOT NULL DEFAULT 'INR' | denormalised from `financial_account` (same rationale as `user_id` above) so `amount` maps to a single `Money` value without a join |
 | direction | text CHECK (DEBIT/CREDIT) | |
 | narration 🔒 | bytea | |
 | counterparty 🔒 | bytea | |
