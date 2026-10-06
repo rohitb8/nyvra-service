@@ -1,5 +1,6 @@
 package com.rohit.nyvra.user;
 
+import com.rohit.nyvra.common.crypto.BlindIndexHasher;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
@@ -13,9 +14,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class CurrentUserService {
 
     private final UserProfileRepository repository;
+    private final BlindIndexHasher blindIndexHasher;
 
-    public CurrentUserService(UserProfileRepository repository) {
+    public CurrentUserService(UserProfileRepository repository, BlindIndexHasher blindIndexHasher) {
         this.repository = repository;
+        this.blindIndexHasher = blindIndexHasher;
     }
 
     @Transactional
@@ -23,10 +26,11 @@ public class CurrentUserService {
         Jwt jwt = currentJwt();
         String subject = jwt.getSubject();
         return repository.findByKeycloakSubject(subject)
-            .orElseGet(() -> repository.save(new UserProfile(
-                subject,
-                jwt.getClaimAsString("email"),
-                jwt.getClaimAsString("name"))));
+            .orElseGet(() -> {
+                String email = jwt.getClaimAsString("email");
+                return repository.save(new UserProfile(
+                    subject, email, EmailBlindIndex.of(blindIndexHasher, email), jwt.getClaimAsString("name")));
+            });
     }
 
     private static Jwt currentJwt() {
