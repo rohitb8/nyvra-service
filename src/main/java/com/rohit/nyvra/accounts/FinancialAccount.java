@@ -94,6 +94,10 @@ public class FinancialAccount extends AbstractEntity {
         this.label = label;
     }
 
+    public void changeInstitution(String institution) {
+        this.institution = institution;
+    }
+
     public void changeStatus(AccountStatus status) {
         this.status = Objects.requireNonNull(status, "status");
     }

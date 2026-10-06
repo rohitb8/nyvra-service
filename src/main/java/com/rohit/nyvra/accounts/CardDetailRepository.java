@@ -1,5 +1,6 @@
 package com.rohit.nyvra.accounts;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -9,4 +10,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface CardDetailRepository extends JpaRepository<CardDetail, UUID> {
 
     List<CardDetail> findByFinancialAccountId(UUID financialAccountId);
+
+    List<CardDetail> findByFinancialAccountIdIn(Collection<UUID> financialAccountIds);
 }
