@@ -113,7 +113,7 @@ lower version after a higher one (`decisions.md` §5).
 - [x] `V2` — Accounts (`financial_account`, `transaction`, `card_detail`) + `shedlock` + `ensure_monthly_partition()` — test persists an account + 1000 transactions spanning 2 monthly partitions and pages them (`AccountsRepositoryIntegrationTest`)
 - [x] `V3` — Income (`income_source`, `income_entry`, `payslip_document`) — `btree_gist` for the no-overlap exclusion constraint
 - [x] `V4` — Expenses (`category`, `categorisation_rule`, `expense`, `spending_habit_snapshot`) + `V4.1__seed_categories.sql`
-- [ ] Retrofit `user_profile.email` to encrypted, two-step (the one exception to "encrypt from creation", since it already has real rows) — crypto utility now exists
+- [~] Retrofit `user_profile.email` to encrypted, two-step — **expand done** (`V5` adds `email_encrypted` + `email_hash`; `UserEmailBackfill` encrypts existing rows at boot). **Contract step open:** drop the plaintext `email` column in a later migration once the backfill has run in every env
 - [ ] Portfolio (`instrument`, `portfolio_holding`, `corporate_action`, `price_quote`, `valuation_snapshot`) — first hypertables; `CREATE EXTENSION IF NOT EXISTS timescaledb` here
 - [ ] Net Worth (`net_worth_snapshot`, `manual_asset_liability`)
 - [ ] Analytics (`health_score`, `insight`, `dashboard_summary_cache`)

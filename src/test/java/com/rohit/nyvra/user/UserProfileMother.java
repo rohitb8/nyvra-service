@@ -16,6 +16,6 @@ public final class UserProfileMother {
     }
 
     public static UserProfile aUserProfile(String keycloakSubject) {
-        return new UserProfile(keycloakSubject, keycloakSubject + "@nyvra.local", "Test User");
+        return new UserProfile(keycloakSubject, keycloakSubject + "@nyvra.local", "hash-" + keycloakSubject, "Test User");
     }
 }

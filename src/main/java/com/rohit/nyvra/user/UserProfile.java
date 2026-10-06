@@ -1,19 +1,21 @@
 package com.rohit.nyvra.user;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import com.rohit.nyvra.common.crypto.EncryptedStringConverter;
 import com.rohit.nyvra.common.persistence.AbstractEntity;
 
 /**
  * A nyvra user, keyed by the Keycloak {@code sub} claim. Never stores credentials.
  *
- * <p>NOTE: {@code email} is stored in plaintext in this skeleton. Per
- * {@code docs/engineering/DATABASE_DESIGN.md} it must become a field-level-encrypted (🔒) column with a
- * blind-index {@code email_hash} for lookup — follow-up before real data.
+ * <p>{@code email} is a field-encrypted (🔒) column with a blind-index {@code email_hash} for lookup
+ * ({@code database/decisions.md} §1). The legacy plaintext {@code email} column is deliberately
+ * unmapped: it is kept only until the backfill is verified everywhere, then dropped (contract step).
  */
 @Entity
 @Table(name = "user_profile")
@@ -22,8 +24,12 @@ public class UserProfile extends AbstractEntity {
     @Column(name = "keycloak_subject", nullable = false, unique = true, updatable = false)
     private String keycloakSubject;
 
-    @Column(name = "email")
+    @Convert(converter = EncryptedStringConverter.class)
+    @Column(name = "email_encrypted")
     private String email;
+
+    @Column(name = "email_hash", unique = true)
+    private String emailHash;
 
     @Column(name = "display_name")
     private String displayName;
@@ -40,9 +46,10 @@ public class UserProfile extends AbstractEntity {
         // for JPA
     }
 
-    public UserProfile(String keycloakSubject, String email, String displayName) {
+    public UserProfile(String keycloakSubject, String email, String emailHash, String displayName) {
         this.keycloakSubject = keycloakSubject;
         this.email = email;
+        this.emailHash = emailHash;
         this.displayName = displayName;
     }
 
@@ -54,8 +61,14 @@ public class UserProfile extends AbstractEntity {
         return email;
     }
 
-    public void setEmail(String email) {
+    public String getEmailHash() {
+        return emailHash;
+    }
+
+    /** Email and its blind index always change together. */
+    public void changeEmail(String email, String emailHash) {
         this.email = email;
+        this.emailHash = emailHash;
     }
 
     public String getDisplayName() {
