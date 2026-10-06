@@ -9,6 +9,7 @@ import java.util.List;
  * @param timestamp when the error was produced (UTC)
  * @param status    HTTP status code
  * @param error     HTTP status reason phrase
+ * @param code      stable machine-readable code the client maps to copy (additive; absent where not yet assigned)
  * @param message   human-readable summary (safe to show; never contains secrets or PII)
  * @param path      request path
  * @param details   optional field-level validation messages
@@ -20,14 +21,21 @@ public record ApiError(
     int status,
     String error,
     String message,
+    String code,
     String path,
     List<String> details,
     String traceId) {
 
     public static ApiError of(
             int status, String error, String message, String path, List<String> details, String traceId) {
+        return of(status, error, message, null, path, details, traceId);
+    }
+
+    public static ApiError of(
+            int status, String error, String message, String code, String path, List<String> details,
+            String traceId) {
         return new ApiError(
-            Instant.now(), status, error, message, path,
+            Instant.now(), status, error, message, code, path,
             details == null || details.isEmpty() ? null : details,
             traceId);
     }

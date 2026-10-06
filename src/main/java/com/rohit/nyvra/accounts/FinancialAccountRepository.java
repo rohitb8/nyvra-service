@@ -5,8 +5,10 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
-public interface FinancialAccountRepository extends JpaRepository<FinancialAccount, UUID> {
+public interface FinancialAccountRepository
+        extends JpaRepository<FinancialAccount, UUID>, JpaSpecificationExecutor<FinancialAccount> {
 
     Optional<FinancialAccount> findByIdAndUserIdAndDeletedAtIsNull(UUID id, UUID userId);
 
