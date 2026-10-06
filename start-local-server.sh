@@ -32,6 +32,17 @@ if [ ! -f .env ]; then
     cp .env.example .env
 fi
 
+# The app refuses to start without real 32-byte field-encryption / blind-index keys. Replace the
+# .env.example placeholders with fresh local-only keys once; later runs keep them, so locally
+# encrypted rows stay readable.
+for key in NYVRA_FIELD_ENCRYPTION_KEY NYVRA_BLIND_INDEX_KEY; do
+    if grep -q "^${key}=CHANGE_ME" .env; then
+        log "Generating a local ${key} in .env"
+        value="$(openssl rand -base64 32)"
+        sed -i.bak "s|^${key}=CHANGE_ME.*|${key}=${value}|" .env && rm -f .env.bak
+    fi
+done
+
 # --- 2. Docker daemon ------------------------------------------------------------------------
 if ! docker info >/dev/null 2>&1; then
     case "$(uname -s)" in
@@ -110,4 +121,8 @@ fi
 
 # --- 4. App --------------------------------------------------------------------------------
 log "Starting the app (profile 'local')..."
+# application-local.yml defaults everything else; only the crypto keys must come from .env.
+NYVRA_FIELD_ENCRYPTION_KEY="$(grep '^NYVRA_FIELD_ENCRYPTION_KEY=' .env | cut -d= -f2-)"
+NYVRA_BLIND_INDEX_KEY="$(grep '^NYVRA_BLIND_INDEX_KEY=' .env | cut -d= -f2-)"
+export NYVRA_FIELD_ENCRYPTION_KEY NYVRA_BLIND_INDEX_KEY
 exec ./mvnw spring-boot:run

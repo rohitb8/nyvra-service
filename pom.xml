@@ -30,6 +30,9 @@
              combination it shipped with). -->
         <testcontainers.version>1.21.4</testcontainers.version>
         <logstash-logback-encoder.version>9.0</logstash-logback-encoder.version>
+        <uuid-creator.version>6.1.1</uuid-creator.version>
+        <!-- 6.x is the line built against Spring Framework 6 (Boot 3); 7.x targets Spring 7. -->
+        <shedlock.version>6.10.0</shedlock.version>
         <!-- Must match the Flyway version Spring Boot 3.3.5's BOM manages (flyway-core / -database-postgresql
              on the app classpath), so `./mvnw flyway:migrate` behaves the same as the app's own migration. -->
         <flyway.version>10.10.0</flyway.version>
@@ -129,6 +132,23 @@
             <artifactId>logstash-logback-encoder</artifactId>
             <version>${logstash-logback-encoder.version}</version>
             <scope>runtime</scope>
+        </dependency>
+
+        <!-- Persistence support: UUID v7 ids, cluster-safe scheduled jobs (database/decisions.md) -->
+        <dependency>
+            <groupId>com.github.f4b6a3</groupId>
+            <artifactId>uuid-creator</artifactId>
+            <version>${uuid-creator.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>net.javacrumbs.shedlock</groupId>
+            <artifactId>shedlock-spring</artifactId>
+            <version>${shedlock.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>net.javacrumbs.shedlock</groupId>
+            <artifactId>shedlock-provider-jdbc-template</artifactId>
+            <version>${shedlock.version}</version>
         </dependency>
 
         <!-- Mapping / boilerplate -->

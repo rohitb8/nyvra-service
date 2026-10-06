@@ -78,8 +78,14 @@ src/main/java/com/rohit/nyvra/
   common/exception/    ApiError, GlobalExceptionHandler, ResourceNotFoundException + 409/422/429 exceptions
   common/logging/      CorrelationIdFilter, UserIdMdcFilter — traceId/userId in MDC (never email)
   common/security/     ApiErrorAuthenticationEntryPoint, ApiErrorAccessDeniedHandler (401/403 → ApiError)
+  common/persistence/  AbstractEntity (UUID v7 id + timestamps), RecordSource
+  common/money/        Money value type (scale 2, currency-safe)
+  common/crypto/       FieldEncryptor (AES-256-GCM), EncryptedStringConverter (🔒 columns), BlindIndexHasher
+  common/partition/    monthly partitions for transaction/expense + the ShedLock'd maintenance job
   user/                first real module — profile, JIT provisioning, GET /users/me
-  ingestion/ accounts/ income/ expense/ networth/ portfolio/ aggregator/ analytics/
+  accounts/ income/ expense/
+                       entities + repositories (V2–V4); no services/controllers yet
+  ingestion/ networth/ portfolio/ aggregator/ analytics/
                        module placeholders (package-info) — build out per DOMAIN_MODEL.md
 src/main/resources/
   application.yml + application-{local,dev,staging,prod}.yml
@@ -93,11 +99,11 @@ src/test/java/com/rohit/nyvra/
 
 ## Status & what to work on next
 
-`user` is still the only real domain module (Phase 2+ builds out the rest), but the foundation is
-done: CI, Testcontainers-backed test infra, `ARCHITECTURE.md`, logging/correlation-id, full
-`GlobalExceptionHandler` status coverage, and the secrets strategy (`TODO.md` Phase 1, all done).
-TimescaleDB hypertables, table partitioning, and field-level encryption are defined in
-`DATABASE_DESIGN.md` but deferred to Phase 2's migrations.
+Phase 1 (foundation) is done. Phase 2 is under way: Accounts, Income and Expenses have their
+migrations (V2–V4.1), entities and repositories, with field-level encryption and monthly partitioning
+live. Portfolio, Net Worth, Analytics, Ingestion and the `user_profile.email` encryption retrofit are
+still proposed in `database/schema.dbml`. Encryption keys are now required to boot (`.env`; see
+`docs/operations/ENVIRONMENTS.md` §6).
 
 See [`TODO.md`](TODO.md) for the prioritised roadmap (phases: foundation → DB migrations → API
 contract → business logic → ingestion → hardening → launch).

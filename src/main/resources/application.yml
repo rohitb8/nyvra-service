@@ -84,6 +84,15 @@ nyvra:
     token-url: ${NYVRA_OIDC_TOKEN_URL:http://localhost:8081/realms/nyvra/protocol/openid-connect/token}
   jobs:
     enabled: true
+  partitions:
+    # MonthlyRangePartitionMaintenance keeps transaction/expense partitions this many months ahead.
+    months-ahead: 3
+    cron: "0 15 2 * * *"
+  crypto:
+    # Required — the app refuses to start without valid 32-byte base64 keys (ENVIRONMENTS.md §6).
+    field-encryption-key: ${NYVRA_FIELD_ENCRYPTION_KEY}
+    field-encryption-key-previous: ${NYVRA_FIELD_ENCRYPTION_KEY_PREVIOUS:}
+    blind-index-key: ${NYVRA_BLIND_INDEX_KEY}
 
 logging:
   level:

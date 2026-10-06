@@ -87,33 +87,37 @@ Once `schema.dbml` is signed off, run the `/db-sync` skill (`.claude/skills/db-s
 actual migrations + entities; it diffs `schema.dbml` against the real migration history and current
 JPA entities and never assumes the entities are already right.
 
-**Status: schema design in progress** (`database/schema.dbml` under revision) — nothing beyond V1 is
-built yet.
+**Status: Accounts, Income, Expenses built** (V2–V4.1). Portfolio, Net Worth, Analytics, Ingestion and
+the email retrofit are still proposed in `database/schema.dbml`.
 
-### 2.1 Conventions — decided, not yet implemented
+### 2.1 Conventions — decided and implemented
 Recorded in `database/decisions.md` (rationale) — implementation is a `/db-sync` output once schema
 work starts, not a standalone task:
-- [x] **Decided:** UUID v7 (`com.github.f4b6a3:uuid-creator`), generated in the app for every `@Id`.
-- [x] **Decided:** `AbstractEntity` `@MappedSuperclass` (`id`, `createdAt`, `updatedAt`) — `UserProfile` gets retrofitted to extend it.
-- [x] **Decided:** a shared `Money` `@Embeddable` (amount + currency) on every money-bearing field, not plain `BigDecimal`+`String` pairs — `decisions.md` §4.
-- [x] **Decided:** partition management for `transaction`/`expense` via an app-level `@Scheduled` + ShedLock job, not `pg_partman` — `decisions.md` §2.
+- [x] UUID v7 (`com.github.f4b6a3:uuid-creator`), generated in the app for every `@Id` — `common/persistence/AbstractEntity`.
+- [x] `AbstractEntity` `@MappedSuperclass` (`id`, `createdAt`, `updatedAt`, `Persistable`) — `UserProfile` retrofitted to extend it.
+- [x] A shared `Money` value type on every money-bearing field — built as a record, not an `@Embeddable` (`decisions.md` §4 "As built").
+- [x] Partition management for `transaction`/`expense` via `@Scheduled` + ShedLock (`common/partition/`), not `pg_partman` — `decisions.md` §2.
+- [x] Crypto utility (`common/crypto/`: `FieldEncryptor` AES-256-GCM dual-key, `EncryptedStringConverter`, `BlindIndexHasher`) — keys required at startup.
 - [x] **Decided:** `price_quote`/`valuation_snapshot`/`net_worth_snapshot`/`health_score` become TimescaleDB hypertables in their own creation migration, not a separate later conversion — `decisions.md` §3.
 - [x] **Decided:** every new (not-yet-applied) table encrypts its 🔒 columns from creation; only `user_profile.email` (already applied in V1) gets a genuine two-step retrofit — `decisions.md` §1.
-- [ ] Enums: `@Enumerated(STRING)` + a DB `CHECK` in the migration (not native PG enum) — unchanged, no open question here.
+- [x] Enums: `@Enumerated(STRING)` + a DB `CHECK` in the migration (not native PG enum).
 - [ ] `@Transactional(readOnly = true)` default on read services.
 
 ### 2.2 Migration build order
 Per `database/schema.dbml`'s notes on which migration each table belongs to. One migration per
 context, in dependency order (mirrors `docs/engineering/ARCHITECTURE.md`'s module map):
 
-- [ ] `V2`/`V3` — retrofit `user_profile.email` to encrypted (the one exception to "encrypt from creation", since it already has real rows)
-- [ ] `V4` — Accounts (`financial_account`, `transaction`, `card_detail`) — **done when:** test persists an account + 1000 transactions spanning 2 monthly partitions; a paged list query returns correctly
-- [ ] `V5` — Income (`income_source`, `income_entry`, `payslip_document`) — needs `CREATE EXTENSION IF NOT EXISTS btree_gist`
-- [ ] `V6` — Expenses (`category`, `categorisation_rule`, `expense`, `spending_habit_snapshot`) + `V6.1__seed_categories.sql`
-- [ ] `V7` — Portfolio (`instrument`, `portfolio_holding`, `corporate_action`, `price_quote`, `valuation_snapshot`) — first hypertables; `CREATE EXTENSION IF NOT EXISTS timescaledb` here
-- [ ] `V8` — Net Worth (`net_worth_snapshot`, `manual_asset_liability`)
-- [ ] `V9` — Analytics (`health_score`, `insight`, `dashboard_summary_cache`)
-- [ ] `V10` — Ingestion (`aggregator_consent`, `fetch_session`, `raw_financial_record`, `normalisation_run`) + the `raw_financial_record` retention job
+Version numbers are assigned when a migration is written, never reserved ahead — Flyway won't apply a
+lower version after a higher one (`decisions.md` §5).
+
+- [x] `V2` — Accounts (`financial_account`, `transaction`, `card_detail`) + `shedlock` + `ensure_monthly_partition()` — test persists an account + 1000 transactions spanning 2 monthly partitions and pages them (`AccountsRepositoryIntegrationTest`)
+- [x] `V3` — Income (`income_source`, `income_entry`, `payslip_document`) — `btree_gist` for the no-overlap exclusion constraint
+- [x] `V4` — Expenses (`category`, `categorisation_rule`, `expense`, `spending_habit_snapshot`) + `V4.1__seed_categories.sql`
+- [ ] Retrofit `user_profile.email` to encrypted, two-step (the one exception to "encrypt from creation", since it already has real rows) — crypto utility now exists
+- [ ] Portfolio (`instrument`, `portfolio_holding`, `corporate_action`, `price_quote`, `valuation_snapshot`) — first hypertables; `CREATE EXTENSION IF NOT EXISTS timescaledb` here
+- [ ] Net Worth (`net_worth_snapshot`, `manual_asset_liability`)
+- [ ] Analytics (`health_score`, `insight`, `dashboard_summary_cache`)
+- [ ] Ingestion (`aggregator_consent`, `fetch_session`, `raw_financial_record`, `normalisation_run`) + the `raw_financial_record` retention job
 
 For every migration: JPA entity, Spring Data repository, and a repository slice test extending
 `AbstractIntegrationTest`. Keep `ddl-auto=validate` — Flyway owns the schema.
