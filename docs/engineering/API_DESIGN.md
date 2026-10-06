@@ -245,9 +245,9 @@ because it already ships.
 
 ## 10. Open questions for review
 
-1. **Custom categories need an owner** — *being resolved in the schema work*: `category` gets a
-   nullable `user_id` (`null` = system category; names unique per user and parent) in
-   `schema.dbml`, owned by the "Build the target database schema" thread. The API needs no change:
+1. **Custom categories need an owner** — *resolved in V4*: `category` has a nullable `user_id`
+   (`null` = system category; names unique per user and parent — `database/decisions.md` §7).
+   The API needs no change:
    `GET /categories` returns system categories plus the caller's own, and custom ones are
    `system: false`.
 2. **"By cadence" spending view.** The frontend IA shows Spending *by cadence* (monthly fixed /
