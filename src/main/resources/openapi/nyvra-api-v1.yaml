@@ -1,0 +1,1825 @@
+openapi: 3.0.3
+info:
+  title: nyvra API
+  version: 1.0.0-draft.1
+  description: |
+    Personal finance accountant — REST API. All endpoints are under /api/v1.
+
+    **Draft contract (contract-first).** Conventions are in `docs/engineering/API_DESIGN.md`.
+    Not frozen yet — do not tag `api-v1.0` until review is done and the controllers' springdoc
+    export matches this file.
+
+    Covered: users/me (shipped), accounts + transactions, income, expenses + categories +
+    categorisation rules + spending habits, health score.
+servers:
+  - url: /
+    description: Current host
+security:
+  - keycloak: []
+tags:
+  - name: User
+    description: The caller's profile.
+  - name: Accounts
+    description: Bank, loan, card, deposit and retirement accounts.
+  - name: Transactions
+    description: The immutable account ledger.
+  - name: Income
+    description: Income sources, entries and payslips.
+  - name: Expenses
+    description: Categorised spending, manual entries and splits.
+  - name: Categories
+    description: Category tree and categorisation rules.
+  - name: Spending
+    description: Server-computed spending breakdowns.
+  - name: Health score
+    description: The Financial Health Score (HEALTH_SCORE_SPEC.md).
+
+paths:
+  # ------------------------------------------------------------------ User
+  /api/v1/users/me:
+    get:
+      tags: [User]
+      operationId: getCurrentUser
+      summary: Current user profile
+      description: Returns the caller's profile, creating it on first call.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserProfileResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ------------------------------------------------------------------ Accounts
+  /api/v1/accounts:
+    get:
+      tags: [Accounts]
+      operationId: listAccounts
+      summary: List accounts
+      description: Bank, loan, card, deposit and retirement accounts — AA-linked and manual.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: sort
+          in: query
+          description: '`field,asc|desc`. Fields: `label`, `type`, `balanceAsOf`, `currentBalance`. Default `type,asc`.'
+          schema: { type: array, items: { type: string } }
+          style: form
+          explode: true
+        - name: type
+          in: query
+          schema: { type: array, items: { $ref: '#/components/schemas/AccountType' } }
+          style: form
+          explode: true
+        - name: status
+          in: query
+          description: Default returns `ACTIVE` and `STALE`; pass `CLOSED` explicitly to include closed accounts.
+          schema: { type: array, items: { $ref: '#/components/schemas/AccountStatus' } }
+          style: form
+          explode: true
+        - name: source
+          in: query
+          schema: { $ref: '#/components/schemas/AccountSource' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      tags: [Accounts]
+      operationId: createManualAccount
+      summary: Create a manual account
+      description: AA accounts are created by ingestion, never through this endpoint; `source` is always `MANUAL`.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateAccountRequest' }
+      responses:
+        '201':
+          $ref: '#/components/responses/AccountCreated'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/accounts/{accountId}:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+    get:
+      tags: [Accounts]
+      operationId: getAccount
+      summary: Get one account
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    patch:
+      tags: [Accounts]
+      operationId: updateAccount
+      summary: Update an account
+      description: |
+        `label` and `institution` are editable on any account. `currentBalance`, `balanceAsOf` and
+        `card.creditLimit` are editable on `MANUAL` accounts only — on an AA account they return
+        `409 SOURCE_READ_ONLY`. Closed accounts return `409 ACCOUNT_CLOSED`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateAccountRequest' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    delete:
+      tags: [Accounts]
+      operationId: deleteManualAccount
+      summary: Delete a manual account
+      description: Soft delete. AA accounts can't be deleted (`409 SOURCE_READ_ONLY`) — close them instead.
+      responses:
+        '204': { description: "Deleted" }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/accounts/{accountId}/close:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+    post:
+      tags: [Accounts]
+      operationId: closeAccount
+      summary: Close an account
+      description: Marks the account `CLOSED`. History is kept; it stops counting toward net worth. Closing an already-closed account is a no-op `200`.
+      responses:
+        '200':
+          description: Closed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/accounts/{accountId}/transactions:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+    get:
+      tags: [Transactions]
+      operationId: listAccountTransactions
+      summary: List one account's transactions
+      description: Newest first (`valueDate DESC, id DESC`). Cursor-paginated.
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - name: direction
+          in: query
+          schema: { $ref: '#/components/schemas/TransactionDirection' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TransactionCursorPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ------------------------------------------------------------------ Transactions
+  /api/v1/transactions:
+    get:
+      tags: [Transactions]
+      operationId: listTransactions
+      summary: List transactions across accounts
+      description: Newest first (`valueDate DESC, id DESC`). Cursor-paginated.
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - name: accountId
+          in: query
+          schema: { type: array, items: { type: string, format: uuid } }
+          style: form
+          explode: true
+        - name: direction
+          in: query
+          schema: { $ref: '#/components/schemas/TransactionDirection' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TransactionCursorPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/transactions/{transactionId}:
+    parameters:
+      - name: transactionId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Transactions]
+      operationId: getTransaction
+      summary: Get one transaction
+      description: Transactions are immutable — corrections arrive as new reversing transactions.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Transaction' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ------------------------------------------------------------------ Income
+  /api/v1/income/sources:
+    get:
+      tags: [Income]
+      operationId: listIncomeSources
+      summary: List income sources
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: sort
+          in: query
+          description: '`field,asc|desc`. Fields: `name`, `type`, `createdAt`. Default `name,asc`.'
+          schema: { type: array, items: { type: string } }
+          style: form
+          explode: true
+        - name: type
+          in: query
+          schema: { type: array, items: { $ref: '#/components/schemas/IncomeType' } }
+          style: form
+          explode: true
+        - name: active
+          in: query
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IncomeSourcePage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      tags: [Income]
+      operationId: createIncomeSource
+      summary: Create an income source
+      description: '`expectedAmount` is required unless `cadence` is `IRREGULAR` (`422 EXPECTED_AMOUNT_REQUIRED`).'
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateIncomeSourceRequest' }
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IncomeSource' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/income/sources/{sourceId}:
+    parameters:
+      - $ref: '#/components/parameters/IncomeSourceId'
+    get:
+      tags: [Income]
+      operationId: getIncomeSource
+      summary: Get one income source
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IncomeSource' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    patch:
+      tags: [Income]
+      operationId: updateIncomeSource
+      summary: Update an income source
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateIncomeSourceRequest' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IncomeSource' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    delete:
+      tags: [Income]
+      operationId: deleteIncomeSource
+      summary: Delete an income source
+      description: A source with entries is deactivated (`active=false`) rather than removed, so past entries stay explainable.
+      responses:
+        '204': { description: "Deleted or deactivated" }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/income/entries:
+    get:
+      tags: [Income]
+      operationId: listIncomeEntries
+      summary: List income entries
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: sort
+          in: query
+          description: '`field,asc|desc`. Fields: `receivedOn`, `periodStart`, `netAmount`. Default `receivedOn,desc`.'
+          schema: { type: array, items: { type: string } }
+          style: form
+          explode: true
+        - name: sourceId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: type
+          in: query
+          description: Filter by the source's income type.
+          schema: { type: array, items: { $ref: '#/components/schemas/IncomeType' } }
+          style: form
+          explode: true
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IncomeEntryPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      tags: [Income]
+      operationId: createIncomeEntry
+      summary: Record an income entry manually
+      description: |
+        `netAmount` must not exceed `grossAmount` (`422 NET_EXCEEDS_GROSS`); the period may not
+        overlap another entry for the same source (`422 INCOME_PERIOD_OVERLAP`).
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateIncomeEntryRequest' }
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IncomeEntry' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/income/entries/{entryId}:
+    parameters:
+      - $ref: '#/components/parameters/IncomeEntryId'
+    get:
+      tags: [Income]
+      operationId: getIncomeEntry
+      summary: Get one income entry
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IncomeEntry' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    patch:
+      tags: [Income]
+      operationId: updateIncomeEntry
+      summary: Update an income entry
+      description: Amounts and dates on `AA_DETECTED` entries are read-only (`409 SOURCE_READ_ONLY`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateIncomeEntryRequest' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IncomeEntry' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    delete:
+      tags: [Income]
+      operationId: deleteIncomeEntry
+      summary: Delete an income entry
+      description: '`AA_DETECTED` entries cannot be deleted (`409 SOURCE_READ_ONLY`).'
+      responses:
+        '204': { description: "Deleted" }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/income/entries/{entryId}/payslip:
+    parameters:
+      - $ref: '#/components/parameters/IncomeEntryId'
+    post:
+      tags: [Income]
+      operationId: uploadPayslip
+      summary: Upload a payslip for an entry
+      description: |
+        Stores the file in object storage and queues parsing. Replaces any previous payslip on the
+        entry. Parsing is asynchronous — poll `GET` or refetch the entry; `parseStatus` moves from
+        `PENDING` to `PARSED` or `FAILED`.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: PDF, PNG or JPEG, at most 5 MB.
+      responses:
+        '201':
+          description: Uploaded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Payslip' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    get:
+      tags: [Income]
+      operationId: getPayslip
+      summary: Get payslip metadata and parsed fields
+      description: The file itself is not served back in v1.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Payslip' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/income/summary:
+    get:
+      tags: [Income]
+      operationId: getIncomeSummary
+      summary: Rolling income summary
+      description: Server-computed trailing averages and by-type totals for the Income screen. The client never derives these.
+      parameters:
+        - name: window
+          in: query
+          description: Trailing window in months.
+          schema: { type: integer, enum: [3, 6, 12], default: 3 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IncomeSummary' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ------------------------------------------------------------------ Expenses
+  /api/v1/expenses:
+    get:
+      tags: [Expenses]
+      operationId: listExpenses
+      summary: List expenses
+      description: |
+        Newest first (`date DESC, id DESC`). Cursor-paginated. Pass either `month` or `from`/`to`,
+        not both (`400`). Split parents are returned with their `splits`; split children are not
+        repeated as top-level items.
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Month'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - name: categoryId
+          in: query
+          description: Matches the category or any of its children.
+          schema: { type: string, format: uuid }
+        - name: necessity
+          in: query
+          schema: { type: array, items: { $ref: '#/components/schemas/Necessity' } }
+          style: form
+          explode: true
+        - name: origin
+          in: query
+          schema: { $ref: '#/components/schemas/ExpenseOrigin' }
+        - name: q
+          in: query
+          description: Case-insensitive "merchant contains".
+          schema: { type: string, maxLength: 100 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExpenseCursorPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      tags: [Expenses]
+      operationId: createManualExpense
+      summary: Record a manual expense
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateExpenseRequest' }
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Expense' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/expenses/{expenseId}:
+    parameters:
+      - $ref: '#/components/parameters/ExpenseId'
+    get:
+      tags: [Expenses]
+      operationId: getExpense
+      summary: Get one expense
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Expense' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    patch:
+      tags: [Expenses]
+      operationId: updateExpense
+      summary: Recategorise or edit an expense
+      description: |
+        Category, subcategory, necessity, merchant and `excludedFromHabits` are editable on any
+        expense. `amount` and `date` only on `MANUAL` expenses (`409 SOURCE_READ_ONLY` otherwise).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateExpenseRequest' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Expense' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    delete:
+      tags: [Expenses]
+      operationId: deleteManualExpense
+      summary: Delete a manual expense
+      description: Only `MANUAL` expenses can be deleted; exclude AA-derived ones with `excludedFromHabits` instead.
+      responses:
+        '204': { description: "Deleted" }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/expenses/{expenseId}/split:
+    parameters:
+      - $ref: '#/components/parameters/ExpenseId'
+    post:
+      tags: [Expenses]
+      operationId: splitExpense
+      summary: Split an expense
+      description: |
+        Splits into 2–20 parts that must sum exactly to the parent amount (`422 SPLIT_SUM_MISMATCH`).
+        An already-split expense returns `409 ALREADY_SPLIT` — undo the split first.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SplitExpenseRequest' }
+      responses:
+        '200':
+          description: The parent, now with `splits`
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Expense' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    delete:
+      tags: [Expenses]
+      operationId: unsplitExpense
+      summary: Undo a split
+      responses:
+        '200':
+          description: The parent, without `splits`
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Expense' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ------------------------------------------------------------------ Categories
+  /api/v1/categories:
+    get:
+      tags: [Categories]
+      operationId: listCategories
+      summary: Category tree
+      description: System categories plus the caller's custom children, as a tree (top-level nodes with `children`). Unpaged.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Category' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      tags: [Categories]
+      operationId: createCategory
+      summary: Add a custom child category
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateCategoryRequest' }
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Category' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/categories/{categoryId}:
+    parameters:
+      - name: categoryId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Categories]
+      operationId: updateCategory
+      summary: Rename a custom category or change its default necessity
+      description: System categories return `422 SYSTEM_CATEGORY_IMMUTABLE`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateCategoryRequest' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Category' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    delete:
+      tags: [Categories]
+      operationId: deleteCategory
+      summary: Delete a custom category
+      description: Fails with `409 CATEGORY_IN_USE` if expenses or rules still point at it; system categories return `422 SYSTEM_CATEGORY_IMMUTABLE`.
+      responses:
+        '204': { description: "Deleted" }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/categorisation-rules:
+    get:
+      tags: [Categories]
+      operationId: listCategorisationRules
+      summary: List the caller's categorisation rules
+      description: System rules are not exposed.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: sort
+          in: query
+          description: '`field,asc|desc`. Fields: `priority`, `matcherType`. Default `priority,desc`.'
+          schema: { type: array, items: { type: string } }
+          style: form
+          explode: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CategorisationRulePage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      tags: [Categories]
+      operationId: createCategorisationRule
+      summary: Create a categorisation rule
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - name: applyToExisting
+          in: query
+          description: Re-categorise existing expenses that match and were not categorised by hand. Runs asynchronously.
+          schema: { type: boolean, default: false }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CategorisationRuleRequest' }
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CategorisationRule' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/categorisation-rules/{ruleId}:
+    parameters:
+      - name: ruleId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Categories]
+      operationId: getCategorisationRule
+      summary: Get one rule
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CategorisationRule' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    patch:
+      tags: [Categories]
+      operationId: updateCategorisationRule
+      summary: Update a rule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateCategorisationRuleRequest' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CategorisationRule' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    delete:
+      tags: [Categories]
+      operationId: deleteCategorisationRule
+      summary: Delete a rule
+      description: Already-categorised expenses keep their category.
+      responses:
+        '204': { description: "Deleted" }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ------------------------------------------------------------------ Spending
+  /api/v1/spending/habits:
+    get:
+      tags: [Spending]
+      operationId: getSpendingHabits
+      summary: Monthly spending breakdown
+      description: |
+        Server-computed breakdown for one month: total spend, essential vs discretionary share, and
+        per-category amount + share. Excludes `SAVINGS_TRANSFER` and `excludedFromHabits` expenses
+        from spending totals (FINANCIAL_RULES §1.1); savings transfers are reported separately.
+      parameters:
+        - name: month
+          in: query
+          description: '`yyyy-MM`. Defaults to the current month in Asia/Kolkata.'
+          schema: { type: string, pattern: '^\d{4}-(0[1-9]|1[0-2])$', example: '2026-09' }
+      responses:
+        '200':
+          description: OK. A month with no expenses returns zero totals and an empty `byCategory`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SpendingHabits' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ------------------------------------------------------------------ Health score
+  /api/v1/health-score:
+    get:
+      tags: [Health score]
+      operationId: getHealthScore
+      summary: Latest Financial Health Score
+      description: |
+        Implements HEALTH_SCORE_SPEC.md §1. Always `200`: when fewer than 3 sub-scores are evaluated,
+        or no score has been computed yet, `band` is `INSUFFICIENT_DATA`, `overall` is absent and
+        `missingData` lists what to connect.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthScore' }
+              examples:
+                scored:
+                  summary: Worked example from HEALTH_SCORE_SPEC §6
+                  value:
+                    asOf: '2026-10-06T00:00:00Z'
+                    overall: 96.8
+                    band: EXCELLENT
+                    confidence: 0.98
+                    confidenceLevel: HIGH
+                    subScores:
+                      savings: { value: 100.0, weight: 0.25, effectiveWeight: 0.263, status: OK, evaluated: true }
+                      spendingControl: { value: 100.0, weight: 0.15, effectiveWeight: 0.158, status: OK, evaluated: true }
+                      emergencyFund: { value: 100.0, weight: 0.20, effectiveWeight: 0.211, status: OK, evaluated: true }
+                      debt: { value: 100.0, weight: 0.20, effectiveWeight: 0.211, status: OK, evaluated: true }
+                      diversification: { value: 80.0, weight: 0.15, effectiveWeight: 0.158, status: OK, evaluated: true }
+                      goalProgress: { weight: 0.05, evaluated: false }
+                    topDrivers: [diversification]
+                    rulesetVersion: '2026.1'
+                    scoreSpecVersion: '2026.1'
+                insufficient:
+                  summary: Not enough data yet
+                  value:
+                    asOf: '2026-10-06T00:00:00Z'
+                    band: INSUFFICIENT_DATA
+                    confidence: 0.12
+                    confidenceLevel: LOW
+                    subScores:
+                      savings: { weight: 0.25, evaluated: false }
+                      spendingControl: { weight: 0.15, evaluated: false }
+                      emergencyFund: { weight: 0.20, evaluated: false }
+                      debt: { value: 100.0, weight: 0.20, effectiveWeight: 1.0, status: OK, evaluated: true }
+                      diversification: { weight: 0.15, evaluated: false }
+                      goalProgress: { weight: 0.05, evaluated: false }
+                    topDrivers: []
+                    missingData: [INCOME_ENTRY, CATEGORISED_TRANSACTIONS_2_MONTHS, LIQUID_ASSETS, HOLDINGS]
+                    rulesetVersion: '2026.1'
+                    scoreSpecVersion: '2026.1'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/health-score/history:
+    get:
+      tags: [Health score]
+      operationId: getHealthScoreHistory
+      summary: Health score trend
+      description: One point per bucket — the last score computed in it. Buckets with no score are omitted (no interpolation).
+      parameters:
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - name: granularity
+          in: query
+          schema: { type: string, enum: [DAY, WEEK, MONTH], default: WEEK }
+      responses:
+        '200':
+          description: OK. Defaults to the last 180 days.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthScoreHistory' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+components:
+  securitySchemes:
+    keycloak:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: http://localhost:8081/realms/nyvra/protocol/openid-connect/auth
+          tokenUrl: http://localhost:8081/realms/nyvra/protocol/openid-connect/token
+          scopes: {}
+
+  parameters:
+    Page:
+      name: page
+      in: query
+      description: 0-based page index.
+      schema: { type: integer, minimum: 0, default: 0 }
+    Size:
+      name: size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque cursor from a previous response's `nextCursor`. Omit for the first page.
+      schema: { type: string, maxLength: 512 }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    From:
+      name: from
+      in: query
+      description: Inclusive start date.
+      schema: { type: string, format: date }
+    To:
+      name: to
+      in: query
+      description: Inclusive end date.
+      schema: { type: string, format: date }
+    Month:
+      name: month
+      in: query
+      description: '`yyyy-MM`.'
+      schema: { type: string, pattern: '^\d{4}-(0[1-9]|1[0-2])$', example: '2026-09' }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Client-generated UUID per user action; retries with the same key replay the original response for 24 h.
+      schema: { type: string, format: uuid }
+    AccountId:
+      name: accountId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IncomeSourceId:
+      name: sourceId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IncomeEntryId:
+      name: entryId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ExpenseId:
+      name: expenseId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  headers:
+    Location:
+      description: URL of the created resource.
+      schema: { type: string }
+
+  responses:
+    AccountCreated:
+      description: Created
+      headers:
+        Location: { $ref: '#/components/headers/Location' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Account' }
+    BadRequest:
+      description: Malformed request or field validation failed.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+          example:
+            timestamp: '2026-10-06T04:30:00Z'
+            status: 400
+            error: Bad Request
+            code: VALIDATION_FAILED
+            message: Request validation failed.
+            path: /api/v1/expenses
+            details: ['amount.amount: must have at most 2 decimal places']
+            traceId: 8f0c2b6e1a4d4c3e
+    Unauthorized:
+      description: Missing, expired or invalid access token.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+    NotFound:
+      description: No such resource for this user.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+    Conflict:
+      description: Conflicts with the resource's current state (see `code`).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+          example:
+            timestamp: '2026-10-06T04:30:00Z'
+            status: 409
+            error: Conflict
+            code: SOURCE_READ_ONLY
+            message: This value comes from your bank and can't be edited.
+            path: /api/v1/accounts/0192a3b4-0000-7000-8000-000000000001
+            traceId: 8f0c2b6e1a4d4c3e
+    Unprocessable:
+      description: Well-formed but breaks a business rule (see `code`).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+          example:
+            timestamp: '2026-10-06T04:30:00Z'
+            status: 422
+            error: Unprocessable Entity
+            code: SPLIT_SUM_MISMATCH
+            message: The parts must add up to the original amount.
+            path: /api/v1/expenses/0192a3b4-0000-7000-8000-000000000002/split
+            traceId: 8f0c2b6e1a4d4c3e
+    PayloadTooLarge:
+      description: File exceeds the size limit.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+    UnsupportedMediaType:
+      description: File type not accepted.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+    InternalError:
+      description: Unexpected server error. `message` is always generic.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+
+  schemas:
+    # ---------------------------------------------------------------- common
+    ApiError:
+      type: object
+      required: [timestamp, status, error, message, path, traceId]
+      properties:
+        timestamp: { type: string, format: date-time }
+        status: { type: integer }
+        error: { type: string, description: "HTTP reason phrase" }
+        code:
+          type: string
+          description: |
+            Stable machine-readable code (proposed addition, see API_DESIGN.md §5). Generic per
+            status (`VALIDATION_FAILED`, `NOT_FOUND`, …) or domain-specific (`SOURCE_READ_ONLY`,
+            `INCOME_PERIOD_OVERLAP`, …). Clients must handle unknown codes.
+          example: INCOME_PERIOD_OVERLAP
+        message: { type: string, description: "Safe, human-readable summary. Never contains PII or internals." }
+        path: { type: string }
+        details:
+          type: array
+          items: { type: string }
+          description: "Field-level messages (`field: message`), on validation errors."
+        traceId: { type: string, description: "Correlation id, also sent as the X-Request-Id header." }
+
+    Money:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount:
+          type: string
+          pattern: '^-?\d{1,17}(\.\d{1,2})?$'
+          description: Decimal string, scale ≤ 2. Signed where the field allows it.
+          example: '125000.00'
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          description: ISO-4217. `INR` only in v1.
+          example: INR
+
+    PositiveMoney:
+      description: Money whose amount must be > 0.
+      allOf:
+        - $ref: '#/components/schemas/Money'
+        - type: object
+          properties:
+            amount:
+              type: string
+              pattern: '^\d{1,17}(\.\d{1,2})?$'
+
+    PageMeta:
+      type: object
+      required: [page, size, totalElements, totalPages]
+      properties:
+        page: { type: integer }
+        size: { type: integer }
+        totalElements: { type: integer, format: int64 }
+        totalPages: { type: integer }
+
+    CursorMeta:
+      type: object
+      required: [limit]
+      properties:
+        nextCursor:
+          type: string
+          description: Absent on the last page.
+        limit: { type: integer }
+
+    RecordSource:
+      type: string
+      enum: [AA, MANUAL, DERIVED, GMAIL]
+
+    # ---------------------------------------------------------------- user
+    UserProfileResponse:
+      type: object
+      required: [id, baseCurrency, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+        displayName: { type: string }
+        baseCurrency: { type: string, example: INR }
+        createdAt: { type: string, format: date-time }
+
+    # ---------------------------------------------------------------- accounts
+    AccountType:
+      type: string
+      enum: [SAVINGS, CURRENT, LOAN, CREDIT_CARD, TERM_DEPOSIT, RECURRING_DEPOSIT, EPF, NPS]
+    AccountStatus:
+      type: string
+      enum: [ACTIVE, CLOSED, STALE]
+      description: '`STALE` = no successful refresh within the freshness window.'
+    AccountSource:
+      type: string
+      enum: [AA, MANUAL]
+    CardNetwork:
+      type: string
+      enum: [VISA, MASTERCARD, RUPAY, AMEX]
+
+    CardDetail:
+      type: object
+      description: Card metadata only — never a PAN, CVV or expiry.
+      required: [last4, network]
+      properties:
+        last4: { type: string, pattern: '^[0-9]{4}$', example: '4821' }
+        network: { $ref: '#/components/schemas/CardNetwork' }
+        label: { type: string, maxLength: 60 }
+        creditLimit: { $ref: '#/components/schemas/Money' }
+
+    Account:
+      type: object
+      required: [id, type, currency, currentBalance, balanceAsOf, source, status]
+      properties:
+        id: { type: string, format: uuid }
+        type: { $ref: '#/components/schemas/AccountType' }
+        institution: { type: string, example: HDFC Bank }
+        maskedNumber: { type: string, description: 'Masked identifier, e.g. `XXXX1234`.', example: XXXX1234 }
+        label: { type: string, example: Salary account }
+        currency: { type: string, example: INR }
+        currentBalance:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: Liability accounts (LOAN, CREDIT_CARD) report the outstanding amount as a positive number.
+        balanceAsOf: { type: string, format: date-time }
+        source: { $ref: '#/components/schemas/AccountSource' }
+        status: { $ref: '#/components/schemas/AccountStatus' }
+        card: { $ref: '#/components/schemas/CardDetail' }
+
+    CreateAccountRequest:
+      type: object
+      required: [type, label, currentBalance]
+      properties:
+        type: { $ref: '#/components/schemas/AccountType' }
+        label: { type: string, minLength: 1, maxLength: 60 }
+        institution: { type: string, maxLength: 80 }
+        maskedNumber:
+          type: string
+          pattern: '^[Xx*]*[0-9]{4}$'
+          description: Last 4 digits, optionally prefixed by mask characters. Anything longer is rejected — full numbers are never accepted.
+        currentBalance: { $ref: '#/components/schemas/Money' }
+        balanceAsOf:
+          type: string
+          format: date-time
+          description: Defaults to now.
+        card:
+          allOf: [{ $ref: '#/components/schemas/CardDetail' }]
+          description: Required when `type` is `CREDIT_CARD`, rejected otherwise (`400`).
+
+    UpdateAccountRequest:
+      type: object
+      description: Omitted fields are unchanged.
+      properties:
+        label: { type: string, minLength: 1, maxLength: 60 }
+        institution: { type: string, maxLength: 80 }
+        currentBalance: { $ref: '#/components/schemas/Money' }
+        balanceAsOf: { type: string, format: date-time }
+        card:
+          type: object
+          properties:
+            label: { type: string, maxLength: 60 }
+            creditLimit: { $ref: '#/components/schemas/Money' }
+
+    AccountPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required: [content]
+          properties:
+            content:
+              type: array
+              items: { $ref: '#/components/schemas/Account' }
+
+    TransactionDirection:
+      type: string
+      enum: [DEBIT, CREDIT]
+
+    Transaction:
+      type: object
+      required: [id, accountId, bookingDate, valueDate, amount, direction, source]
+      properties:
+        id: { type: string, format: uuid }
+        accountId: { type: string, format: uuid }
+        bookingDate: { type: string, format: date }
+        valueDate: { type: string, format: date }
+        amount:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: Signed — negative for debits, positive for credits.
+        direction: { $ref: '#/components/schemas/TransactionDirection' }
+        narration: { type: string }
+        counterparty: { type: string }
+        balanceAfter: { $ref: '#/components/schemas/Money' }
+        source: { $ref: '#/components/schemas/RecordSource' }
+        expenseId:
+          type: string
+          format: uuid
+          description: The expense derived from this transaction, if any.
+
+    TransactionCursorPage:
+      allOf:
+        - $ref: '#/components/schemas/CursorMeta'
+        - type: object
+          required: [content]
+          properties:
+            content:
+              type: array
+              items: { $ref: '#/components/schemas/Transaction' }
+
+    # ---------------------------------------------------------------- income
+    IncomeType:
+      type: string
+      enum: [SALARY, BUSINESS, RENTAL, INTEREST, DIVIDEND, CAPITAL_GAIN, OTHER]
+    Cadence:
+      type: string
+      enum: [MONTHLY, QUARTERLY, ANNUAL, IRREGULAR]
+    IncomeOrigin:
+      type: string
+      enum: [AA_DETECTED, MANUAL, PAYSLIP]
+
+    IncomeSource:
+      type: object
+      required: [id, name, type, cadence, currency, active, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, example: Acme Corp salary }
+        type: { $ref: '#/components/schemas/IncomeType' }
+        cadence: { $ref: '#/components/schemas/Cadence' }
+        expectedAmount:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: Expected net amount per cadence period. Absent for IRREGULAR sources.
+        currency: { type: string, example: INR }
+        active: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    CreateIncomeSourceRequest:
+      type: object
+      required: [name, type, cadence]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        type: { $ref: '#/components/schemas/IncomeType' }
+        cadence: { $ref: '#/components/schemas/Cadence' }
+        expectedAmount: { $ref: '#/components/schemas/PositiveMoney' }
+
+    UpdateIncomeSourceRequest:
+      type: object
+      description: "Omitted fields are unchanged; `expectedAmount: null` clears it (only valid for IRREGULAR)."
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        type: { $ref: '#/components/schemas/IncomeType' }
+        cadence: { $ref: '#/components/schemas/Cadence' }
+        expectedAmount:
+          type: object
+          nullable: true
+          allOf: [{ $ref: '#/components/schemas/PositiveMoney' }]
+        active: { type: boolean }
+
+    IncomeSourcePage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required: [content]
+          properties:
+            content:
+              type: array
+              items: { $ref: '#/components/schemas/IncomeSource' }
+
+    IncomeEntry:
+      type: object
+      required: [id, sourceId, sourceName, sourceType, periodStart, periodEnd, grossAmount, netAmount, receivedOn, origin, hasPayslip]
+      properties:
+        id: { type: string, format: uuid }
+        sourceId: { type: string, format: uuid }
+        sourceName: { type: string }
+        sourceType: { $ref: '#/components/schemas/IncomeType' }
+        periodStart: { type: string, format: date }
+        periodEnd: { type: string, format: date }
+        grossAmount: { $ref: '#/components/schemas/Money' }
+        netAmount: { $ref: '#/components/schemas/Money' }
+        receivedOn: { type: string, format: date }
+        linkedTransactionId: { type: string, format: uuid }
+        origin: { $ref: '#/components/schemas/IncomeOrigin' }
+        hasPayslip: { type: boolean }
+
+    CreateIncomeEntryRequest:
+      type: object
+      required: [sourceId, periodStart, periodEnd, grossAmount, netAmount, receivedOn]
+      properties:
+        sourceId: { type: string, format: uuid }
+        periodStart: { type: string, format: date }
+        periodEnd: { type: string, format: date, description: "Must be on or after `periodStart`." }
+        grossAmount: { $ref: '#/components/schemas/PositiveMoney' }
+        netAmount: { $ref: '#/components/schemas/PositiveMoney' }
+        receivedOn: { type: string, format: date }
+
+    UpdateIncomeEntryRequest:
+      type: object
+      description: Omitted fields are unchanged.
+      properties:
+        periodStart: { type: string, format: date }
+        periodEnd: { type: string, format: date }
+        grossAmount: { $ref: '#/components/schemas/PositiveMoney' }
+        netAmount: { $ref: '#/components/schemas/PositiveMoney' }
+        receivedOn: { type: string, format: date }
+
+    IncomeEntryPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required: [content]
+          properties:
+            content:
+              type: array
+              items: { $ref: '#/components/schemas/IncomeEntry' }
+
+    Payslip:
+      type: object
+      required: [id, incomeEntryId, fileName, contentType, sizeBytes, uploadedAt, parseStatus]
+      properties:
+        id: { type: string, format: uuid }
+        incomeEntryId: { type: string, format: uuid }
+        fileName: { type: string }
+        contentType: { type: string, enum: [application/pdf, image/png, image/jpeg] }
+        sizeBytes: { type: integer, format: int64 }
+        uploadedAt: { type: string, format: date-time }
+        parseStatus: { type: string, enum: [PENDING, PARSED, FAILED] }
+        parsedFields:
+          type: object
+          description: Present once `parseStatus` is `PARSED`. Fields the parser couldn't read are absent.
+          properties:
+            employer: { type: string }
+            payPeriodStart: { type: string, format: date }
+            payPeriodEnd: { type: string, format: date }
+            grossAmount: { $ref: '#/components/schemas/Money' }
+            netAmount: { $ref: '#/components/schemas/Money' }
+            deductions:
+              type: array
+              items:
+                type: object
+                required: [label, amount]
+                properties:
+                  label: { type: string, example: Provident fund }
+                  amount: { $ref: '#/components/schemas/Money' }
+
+    IncomeSummary:
+      type: object
+      required: [windowMonths, from, to, monthlyAverageNet, monthlyAverageGross, totalNet, byType, computedAt]
+      properties:
+        windowMonths: { type: integer, enum: [3, 6, 12] }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        monthlyAverageNet: { $ref: '#/components/schemas/Money' }
+        monthlyAverageGross: { $ref: '#/components/schemas/Money' }
+        totalNet: { $ref: '#/components/schemas/Money' }
+        byType:
+          type: array
+          description: Sorted by `totalNet` descending; types with no income in the window are omitted.
+          items:
+            type: object
+            required: [type, totalNet, sharePct]
+            properties:
+              type: { $ref: '#/components/schemas/IncomeType' }
+              totalNet: { $ref: '#/components/schemas/Money' }
+              sharePct: { type: number, format: double, description: "Percent points, 1 decimal. Shares sum to 100 ± rounding.", example: 92.4 }
+        computedAt: { type: string, format: date-time }
+
+    # ---------------------------------------------------------------- expenses
+    Necessity:
+      type: string
+      enum: [ESSENTIAL, DISCRETIONARY, DEBT_REPAYMENT, SAVINGS_TRANSFER]
+    ExpenseOrigin:
+      type: string
+      enum: [AA, MANUAL, SPLIT]
+
+    CategoryRef:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+
+    ExpenseSplit:
+      type: object
+      required: [id, amount, category, necessity]
+      properties:
+        id: { type: string, format: uuid }
+        amount: { $ref: '#/components/schemas/Money' }
+        category: { $ref: '#/components/schemas/CategoryRef' }
+        subcategory: { $ref: '#/components/schemas/CategoryRef' }
+        necessity: { $ref: '#/components/schemas/Necessity' }
+        note: { type: string }
+
+    Expense:
+      type: object
+      required: [id, date, amount, category, necessity, origin, excludedFromHabits]
+      properties:
+        id: { type: string, format: uuid }
+        date: { type: string, format: date }
+        amount:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: Positive. Refunds arrive as negative expenses (see API_DESIGN.md §10 Q3).
+        category: { $ref: '#/components/schemas/CategoryRef' }
+        subcategory: { $ref: '#/components/schemas/CategoryRef' }
+        merchant: { type: string }
+        necessity: { $ref: '#/components/schemas/Necessity' }
+        origin: { $ref: '#/components/schemas/ExpenseOrigin' }
+        excludedFromHabits: { type: boolean }
+        transactionId: { type: string, format: uuid, description: "Source transaction; absent for manual expenses." }
+        accountId: { type: string, format: uuid }
+        splits:
+          type: array
+          description: Present when this expense has been split.
+          items: { $ref: '#/components/schemas/ExpenseSplit' }
+
+    CreateExpenseRequest:
+      type: object
+      required: [date, amount, categoryId]
+      properties:
+        date: { type: string, format: date }
+        amount: { $ref: '#/components/schemas/PositiveMoney' }
+        categoryId: { type: string, format: uuid }
+        subcategoryId: { type: string, format: uuid }
+        merchant: { type: string, maxLength: 120 }
+        necessity:
+          allOf: [{ $ref: '#/components/schemas/Necessity' }]
+          description: Defaults to the category's `necessityDefault`.
+        excludedFromHabits: { type: boolean, default: false }
+
+    UpdateExpenseRequest:
+      type: object
+      description: Omitted fields are unchanged.
+      properties:
+        categoryId: { type: string, format: uuid }
+        subcategoryId: { type: string, format: uuid, nullable: true }
+        merchant: { type: string, maxLength: 120 }
+        necessity: { $ref: '#/components/schemas/Necessity' }
+        excludedFromHabits: { type: boolean }
+        amount:
+          allOf: [{ $ref: '#/components/schemas/PositiveMoney' }]
+          description: MANUAL expenses only.
+        date:
+          type: string
+          format: date
+          description: MANUAL expenses only.
+
+    SplitExpenseRequest:
+      type: object
+      required: [parts]
+      properties:
+        parts:
+          type: array
+          minItems: 2
+          maxItems: 20
+          items:
+            type: object
+            required: [amount, categoryId]
+            properties:
+              amount: { $ref: '#/components/schemas/PositiveMoney' }
+              categoryId: { type: string, format: uuid }
+              subcategoryId: { type: string, format: uuid }
+              necessity: { $ref: '#/components/schemas/Necessity' }
+              note: { type: string, maxLength: 120 }
+
+    ExpenseCursorPage:
+      allOf:
+        - $ref: '#/components/schemas/CursorMeta'
+        - type: object
+          required: [content]
+          properties:
+            content:
+              type: array
+              items: { $ref: '#/components/schemas/Expense' }
+
+    Category:
+      type: object
+      required: [id, name, system]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, example: Groceries }
+        parentId: { type: string, format: uuid }
+        necessityDefault: { $ref: '#/components/schemas/Necessity' }
+        system: { type: boolean, description: "System categories are seeded and immutable." }
+        children:
+          type: array
+          items: { $ref: '#/components/schemas/Category' }
+
+    CreateCategoryRequest:
+      type: object
+      required: [name, parentId]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 60 }
+        parentId: { type: string, format: uuid }
+        necessityDefault: { $ref: '#/components/schemas/Necessity' }
+
+    UpdateCategoryRequest:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 60 }
+        necessityDefault: { $ref: '#/components/schemas/Necessity' }
+
+    MatcherType:
+      type: string
+      enum: [MERCHANT_REGEX, NARRATION_REGEX, MCC]
+
+    CategorisationRule:
+      type: object
+      required: [id, matcherType, matcherValue, category, necessity, priority]
+      properties:
+        id: { type: string, format: uuid }
+        matcherType: { $ref: '#/components/schemas/MatcherType' }
+        matcherValue: { type: string, example: '(?i)swiggy|zomato' }
+        category: { $ref: '#/components/schemas/CategoryRef' }
+        necessity: { $ref: '#/components/schemas/Necessity' }
+        priority: { type: integer, description: "Higher wins. User rules always outrank system rules." }
+
+    CategorisationRuleRequest:
+      type: object
+      required: [matcherType, matcherValue, categoryId, necessity]
+      properties:
+        matcherType: { $ref: '#/components/schemas/MatcherType' }
+        matcherValue:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: A regex for *_REGEX matchers (validated server-side, `400` if it doesn't compile); a 4-digit code for MCC.
+        categoryId: { type: string, format: uuid }
+        necessity: { $ref: '#/components/schemas/Necessity' }
+        priority: { type: integer, minimum: 0, maximum: 1000, default: 100 }
+
+    UpdateCategorisationRuleRequest:
+      type: object
+      description: Omitted fields are unchanged.
+      properties:
+        matcherType: { $ref: '#/components/schemas/MatcherType' }
+        matcherValue: { type: string, minLength: 1, maxLength: 200 }
+        categoryId: { type: string, format: uuid }
+        necessity: { $ref: '#/components/schemas/Necessity' }
+        priority: { type: integer, minimum: 0, maximum: 1000 }
+
+    CategorisationRulePage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required: [content]
+          properties:
+            content:
+              type: array
+              items: { $ref: '#/components/schemas/CategorisationRule' }
+
+    SpendingHabits:
+      type: object
+      required: [month, totalSpend, essentialPct, discretionaryPct, debtRepaymentPct, savingsTransfers, byCategory, computedAt]
+      properties:
+        month: { type: string, example: '2026-09' }
+        totalSpend:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: Excludes SAVINGS_TRANSFER and excluded-from-habits expenses.
+        essentialPct: { type: number, format: double, description: "Percent points of `totalSpend`, 1 decimal.", example: 58.2 }
+        discretionaryPct: { type: number, format: double, example: 31.5 }
+        debtRepaymentPct: { type: number, format: double, example: 10.3 }
+        savingsTransfers:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: Tracked separately — feeds the savings rate, not spending.
+        byCategory:
+          type: array
+          description: Top-level categories, sorted by amount descending.
+          items:
+            type: object
+            required: [category, amount, pct]
+            properties:
+              category: { $ref: '#/components/schemas/CategoryRef' }
+              amount: { $ref: '#/components/schemas/Money' }
+              pct: { type: number, format: double, description: "Percent points of `totalSpend`, 1 decimal." }
+        computedAt: { type: string, format: date-time }
+
+    # ---------------------------------------------------------------- health score
+    ScoreBand:
+      type: string
+      enum: [NEEDS_ATTENTION, FAIR, GOOD, EXCELLENT, INSUFFICIENT_DATA]
+    ScoreStatus:
+      type: string
+      enum: [OK, WARN, CRITICAL]
+
+    SubScore:
+      type: object
+      required: [weight, evaluated]
+      properties:
+        value: { type: number, format: double, minimum: 0, maximum: 100, description: "1 decimal. Absent when not evaluated." }
+        weight: { type: number, format: double, description: "Base weight from the spec." }
+        effectiveWeight: { type: number, format: double, description: "Weight after redistribution across evaluated sub-scores (3 decimals). Absent when not evaluated." }
+        status: { $ref: '#/components/schemas/ScoreStatus' }
+        evaluated: { type: boolean }
+
+    HealthScore:
+      type: object
+      required: [band, subScores, topDrivers, rulesetVersion, scoreSpecVersion]
+      properties:
+        asOf: { type: string, format: date-time, description: "Absent only if no score has ever been computed." }
+        overall:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+          description: 1 decimal. Absent when `band` is INSUFFICIENT_DATA.
+        band: { $ref: '#/components/schemas/ScoreBand' }
+        confidence: { type: number, format: double, minimum: 0, maximum: 1, description: "3 decimals." }
+        confidenceLevel:
+          type: string
+          enum: [LOW, MEDIUM, HIGH]
+          description: Server-side bucketing of `confidence` (HEALTH_SCORE_SPEC §4.3) so the UI never applies thresholds.
+        subScores:
+          type: object
+          required: [savings, spendingControl, emergencyFund, debt, diversification, goalProgress]
+          properties:
+            savings: { $ref: '#/components/schemas/SubScore' }
+            spendingControl: { $ref: '#/components/schemas/SubScore' }
+            emergencyFund: { $ref: '#/components/schemas/SubScore' }
+            debt: { $ref: '#/components/schemas/SubScore' }
+            diversification: { $ref: '#/components/schemas/SubScore' }
+            goalProgress: { $ref: '#/components/schemas/SubScore' }
+        topDrivers:
+          type: array
+          maxItems: 4
+          description: Up to 3 sub-score keys by `weight × (100 − value)`, plus the cap reason code when a cap applied.
+          items:
+            type: string
+            enum:
+              - savings
+              - spendingControl
+              - emergencyFund
+              - debt
+              - diversification
+              - goalProgress
+              - CAP_EMERGENCY_FUND_BELOW_MIN
+              - CAP_HIGH_INTEREST_DEBT
+              - CAP_FIXED_OBLIGATIONS_OVER_CEILING
+              - CAP_NEGATIVE_SAVINGS
+        cap:
+          type: object
+          description: Present when a hard cap lowered `overall` (HEALTH_SCORE_SPEC §2).
+          required: [value, reason]
+          properties:
+            value: { type: number, format: double, enum: [40, 45, 55] }
+            reason:
+              type: string
+              enum: [CAP_EMERGENCY_FUND_BELOW_MIN, CAP_HIGH_INTEREST_DEBT, CAP_FIXED_OBLIGATIONS_OVER_CEILING, CAP_NEGATIVE_SAVINGS]
+        missingData:
+          type: array
+          description: Present with INSUFFICIENT_DATA — the data-sufficiency gates (FINANCIAL_RULES §6) that failed, in suggested order.
+          items:
+            type: string
+            enum:
+              - INCOME_ENTRY
+              - CATEGORISED_TRANSACTIONS_2_MONTHS
+              - LIQUID_ASSETS
+              - ESSENTIAL_SPEND_3_MONTHS
+              - LIABILITY_ACCOUNT_OR_NO_DEBT_CONFIRMATION
+              - HOLDINGS
+              - GOALS
+        rulesetVersion: { type: string, example: '2026.1' }
+        scoreSpecVersion: { type: string, example: '2026.1' }
+
+    HealthScoreHistory:
+      type: object
+      required: [granularity, from, to, points]
+      properties:
+        granularity: { type: string, enum: [DAY, WEEK, MONTH] }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        points:
+          type: array
+          items:
+            type: object
+            required: [asOf, band]
+            properties:
+              asOf: { type: string, format: date-time }
+              overall: { type: number, format: double, description: "Absent for INSUFFICIENT_DATA points." }
+              band: { $ref: '#/components/schemas/ScoreBand' }

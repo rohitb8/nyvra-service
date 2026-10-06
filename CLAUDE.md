@@ -29,6 +29,7 @@ The Angular web client is a separate repo: `nyvra-ui`.
 | Stack versions / library choices / rationale | `docs/engineering/TECH_STACK.md` |
 | Package layout, where a class belongs | `docs/engineering/BACKEND_STRUCTURE.md` |
 | System diagram, module dependency rules, sync vs async paths, ADRs | `docs/engineering/ARCHITECTURE.md` |
+| REST conventions, endpoints, the OpenAPI contract | `docs/engineering/API_DESIGN.md` + `src/main/resources/openapi/nyvra-api-v1.yaml` |
 | Standing up the shared dev server | `docs/operations/DEV_DEPLOYMENT_PLAN.md` |
 | Getting ready to deploy | `docs/operations/PRE_DEPLOYMENT_CHECKLIST.md` |
 | Index of everything + planned docs | `docs/CLAUDE.md` |
