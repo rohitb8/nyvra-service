@@ -245,10 +245,11 @@ because it already ships.
 
 ## 10. Open questions for review
 
-1. **Custom categories need an owner.** `schema.dbml`'s `category` table has no `user_id`, but
-   `DOMAIN_MODEL.md` lets users add custom children. Proposal: add a nullable `user_id`
-   (`null` = system) and make the unique key `(user_id, parent_id, name)`. Needs a `schema.dbml`
-   edit before `V6`.
+1. **Custom categories need an owner** — *being resolved in the schema work*: `category` gets a
+   nullable `user_id` (`null` = system category; names unique per user and parent) in
+   `schema.dbml`, owned by the "Build the target database schema" thread. The API needs no change:
+   `GET /categories` returns system categories plus the caller's own, and custom ones are
+   `system: false`.
 2. **"By cadence" spending view.** The frontend IA shows Spending *by cadence* (monthly fixed /
    monthly variable / periodic) and an upcoming-periodic-expenses timeline. Nothing in the schema
    or `FINANCIAL_RULES.md` defines cadence on an expense. Left out of this draft; it needs a
