@@ -137,6 +137,9 @@ For every migration: JPA entity, Spring Data repository, and a repository slice 
 ## Phase 3 — API contract  ← unblocks `nyvra-ui` screens
 
 ### 3.1 `API_DESIGN.md`
+**Status: v0.1 draft under review** (`docs/engineering/API_DESIGN.md` + a contract-first
+`src/main/resources/openapi/nyvra-api-v1.yaml` covering accounts, income, expenses, health score).
+Items below tick once the draft is signed off.
 - [ ] Resource naming, plural nouns, nesting (`/accounts/{id}/transactions`)
 - [ ] **Pagination**: `?page=&size=` + envelope `{content,page,size,totalElements,totalPages}`; **cursor** (`?cursor=&limit=`) for `transaction`/`expense` (high volume) — decide, document both if mixed
 - [ ] Sorting `?sort=field,dir`; per-resource filter params
