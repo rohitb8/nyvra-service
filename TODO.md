@@ -155,7 +155,7 @@ Items below tick once the draft is signed off.
 - [ ] `PageResponse<T>` wrapper; never expose/accept JPA entities (`STR` → dto/)
 
 ### 3.3 Controllers per module (all under `/api/v1`)
-- [~] `AccountController` — list/get/create-manual/update/close/delete **done** (`/api/v1/accounts`; `Idempotency-Key` not yet honoured — needs Redis); `TransactionController` (cursor-paged list, get) still open
+- [x] `AccountController` — list/get/create-manual/update/close/delete (`/api/v1/accounts`; `Idempotency-Key` not yet honoured — needs Redis); `TransactionController` — cursor-paged `/transactions` + `/accounts/{id}/transactions`, get by id (`expenseId` on the response waits for the expense link)
 - [ ] `IncomeController` — sources CRUD, entries CRUD, `POST /income/entries/{id}/payslip` (multipart → MinIO)
 - [ ] `ExpenseController` — list, get, update category/necessity, split, rules CRUD; `GET /spending/habits?month=`
 - [ ] `PortfolioController` — holdings list/get, manual holding CRUD, `GET /portfolio/allocation`, `GET /portfolio/xirr`
