@@ -147,14 +147,15 @@ Index: `(user_id, status) WHERE deleted_at IS NULL`, `(user_id, type)`.
 Index: `(user_id, value_date DESC)`, `(account_id, value_date DESC)`.
 Retention: partitions older than 10 years detached to cold storage (policy in `COMPLIANCE.md`).
 
-**`card_detail`** — `id`, `financial_account_id FK`, `last4 char(4)`, `network text`, `label text`, `credit_limit numeric(19,2)`. No PAN/CVV/expiry-day. `CHECK (last4 ~ '^[0-9]{4}$')`.
+**`card_detail`** — `id`, `financial_account_id FK`, `last4 char(4)`, `network text`, `label text`, `credit_limit numeric(19,2)`, `currency char(3)`, timestamps. No PAN/CVV/expiry-day. `CHECK (last4 ~ '^[0-9]{4}$')`.
 
 ### Income
 
 **`income_source`** — `id`, `user_id`, `name`, `type text CHECK (...)`, `cadence text CHECK (...)`, `expected_amount numeric(19,2)`, `currency`, `active bool`, timestamps.
 `CHECK (cadence = 'IRREGULAR' OR expected_amount IS NOT NULL)`.
 
-**`income_entry`** — `id`, `source_id FK`, `user_id`, `period_start date`, `period_end date`, `gross_amount numeric(19,2)`, `net_amount numeric(19,2)`, `received_on date`, `linked_transaction_id uuid`, `origin text`.
+**`income_entry`** — `id`, `source_id FK`, `user_id`, `period_start date`, `period_end date`, `gross_amount numeric(19,2)`, `net_amount numeric(19,2)`, `currency char(3)`, `received_on date`, `linked_transaction_id uuid` (no FK — see below), `origin text`, timestamps.
+`linked_transaction_id` (like `expense.transaction_id`) is a plain id: `transaction`'s PK is `(id, value_date)` and modules don't reach into each other's tables (`database/decisions.md` §6).
 `CHECK (net_amount <= gross_amount)`. Exclusion constraint: no overlapping `[period_start, period_end]` per `source_id` (`EXCLUDE USING gist`).
 Index: `(user_id, period_start DESC)`.
 
@@ -162,8 +163,9 @@ Index: `(user_id, period_start DESC)`.
 
 ### Expenses
 
-**`category`** — `id`, `name`, `parent_id uuid NULL FK self`, `necessity_default text`, `system bool NOT NULL`.
-Unique `(parent_id, name)`. Seeded system tree in a `V__seed_categories.sql`.
+**`category`** — `id`, `user_id uuid NULL` (null = system), `name`, `parent_id uuid NULL FK self`, `necessity_default text`, `system bool NOT NULL`, timestamps.
+`UNIQUE NULLS NOT DISTINCT (user_id, parent_id, name)`; `CHECK (system = (user_id IS NULL))`; `CHECK (system OR parent_id IS NOT NULL)`.
+Seeded system tree in `V4.1__seed_categories.sql` (`database/decisions.md` §7).
 
 **`categorisation_rule`** — `id`, `user_id uuid NULL` (null = system rule), `matcher_type text` (`MERCHANT_REGEX|NARRATION_REGEX|MCC`), `matcher_value text`, `category_id FK`, `necessity text`, `priority int NOT NULL`.
 Index: `(user_id, priority DESC)`, `(matcher_type)`.
@@ -173,8 +175,8 @@ Index: `(user_id, priority DESC)`, `(matcher_type)`.
 |---|---|---|
 | id | uuid | PK `(id, date)` |
 | user_id | uuid | |
-| transaction_id | uuid NULL | null when manually entered |
-| parent_expense_id | uuid NULL | for splits |
+| transaction_id | uuid NULL | null when manually entered; no FK (Accounts module, partitioned) |
+| parent_expense_id | uuid NULL | for splits; FK `(parent_expense_id, date)` → `expense (id, date)`, so a split shares its parent's date |
 | date | date | |
 | amount | numeric(19,2) | |
 | currency | char(3) | |
@@ -185,10 +187,10 @@ Index: `(user_id, priority DESC)`, `(matcher_type)`.
 | origin | text CHECK (AA/MANUAL/SPLIT) | |
 | excluded_from_habits | bool NOT NULL DEFAULT false | |
 
-Index: `(user_id, date DESC)`, `(user_id, category_id, date DESC)`, `(parent_expense_id)`.
+Index: `(user_id, date DESC)`, `(user_id, category_id, date DESC)`, `(parent_expense_id)` and `(transaction_id)` (both partial, `WHERE … IS NOT NULL`).
 Split invariant enforced in the service layer + a nightly reconciliation check.
 
-**`spending_habit_snapshot`** — `id`, `user_id`, `period_month date` (first of month), `by_category_pct JSONB`, `essential_pct numeric(5,2)`, `discretionary_pct numeric(5,2)`, `total_spend numeric(19,2)`, `computed_at`. Unique `(user_id, period_month)`.
+**`spending_habit_snapshot`** — `id`, `user_id`, `period_month date` (first of month), `by_category_pct JSONB`, `essential_pct numeric(5,2)`, `discretionary_pct numeric(5,2)`, `total_spend numeric(19,2)`, `currency char(3)`, `computed_at`, timestamps. Unique `(user_id, period_month)`.
 
 ### Portfolio
 

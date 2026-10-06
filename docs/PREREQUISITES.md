@@ -47,10 +47,11 @@ up-to-date version of this checklist; treat it as canonical if the two ever drif
 
 ---
 
-## 3. Secrets to generate before touching encrypted columns
+## 3. Encryption keys (required to boot)
 
-Not needed to boot the app today (field-level encryption is `TODO.md` §2.10, not yet implemented), but
-generate these once you start on it so `.env` never carries the placeholder value:
+The app refuses to start without valid 32-byte keys (field-level encryption, `common/crypto/`).
+`./start-local-server.sh` generates local ones into `.env` on first run; anywhere else (IDE run
+configs, CI, servers) generate them yourself:
 
 ```bash
 openssl rand -base64 32   # NYVRA_FIELD_ENCRYPTION_KEY

@@ -11,8 +11,10 @@ has actually been applied yet. Right now:
 
 - **Applied (V1):** `user_profile` (minus `email`/`email_hash`/`date_of_birth`/`dpdp_consent_at` —
   those are proposed), `user_preferences`, `data_consent_record`.
-- **Proposed, not yet built:** everything else — the V2/V3 email-encryption retrofit, and V4 through
-  V10 (Accounts → Income → Expenses → Portfolio → Net Worth → Analytics → Ingestion).
+- **Applied (V2–V4.1):** Accounts (V2, plus the shared `shedlock` table and `ensure_monthly_partition()`
+  helper), Income (V3), Expenses (V4) and the system category seed (V4.1).
+- **Proposed, not yet built:** the email-encryption retrofit, then Portfolio → Net Worth → Analytics →
+  Ingestion. Version numbers are assigned when each migration is written (`decisions.md` §5).
 
 The actual, ground-truth migration history is `database/migrations/` — a symlink to
 `src/main/resources/db/migration/`, the real folder Flyway executes against Postgres. `schema.dbml`
@@ -37,8 +39,8 @@ changes.
 ## Conventions baked into every table (see `decisions.md` for the *why*)
 
 - Primary keys: `UUID` v7 (time-ordered), generated in the app.
-- Money columns: `NUMERIC(19,2)` for amounts, `NUMERIC(19,6)` for prices/NAV/FX/quantity — paired with
-  a `CHAR(3)` currency column, mapped to a single `Money` value type on the Java side.
+- Money columns: `NUMERIC(19,2)` for amounts, `NUMERIC(19,6)` for prices/NAV/FX/quantity — every
+  money-bearing row has one `CHAR(3)` currency column, exposed as the `Money` value type on the Java side.
 - 🔒-marked columns are encrypted (AES-256-GCM) at the application layer, stored as `bytea` — **from
   the table's first migration**, never retrofitted later, except `user_profile.email` (the one table
   that already existed before this convention was adopted).

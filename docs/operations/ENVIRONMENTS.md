@@ -127,9 +127,9 @@ is why there's no secrets-client SDK dependency in `pom.xml` today.
 
 ### 6.2 Generating local secrets
 
-Not needed to boot the app today — field-level encryption isn't implemented yet (`TODO.md` Phase
-2.10) — but generate real values once you start on it, rather than shipping with the `.env.example`
-placeholder:
+Required to boot: the app fails at startup on a missing, placeholder or wrong-length key
+(`common/crypto/CryptoKeys`). `./start-local-server.sh` generates local keys into `.env` on first run;
+tests generate random ones per JVM (`AbstractIntegrationTest`). Everywhere else:
 
 ```bash
 openssl rand -base64 32   # NYVRA_FIELD_ENCRYPTION_KEY
@@ -141,9 +141,9 @@ manager everywhere else). See `docs/PREREQUISITES.md` §3 for the first-run vers
 
 ### 6.3 Key-rotation runbook (stub)
 
-A stub, not a drill — the actual `EncryptedStringConverter`/re-encrypt job this describes doesn't
-exist yet (`TODO.md` Phase 2.10). Documenting the intended procedure now so the encryption work is
-built against a known rotation story from day one, not bolted on after.
+`FieldEncryptor`/`EncryptedStringConverter` implement steps 2–3 (encrypt with current, decrypt with
+current then previous). The re-encrypt job in step 4 doesn't exist yet — it's needed before the first
+real rotation.
 
 **Field-encryption key (`NYVRA_FIELD_ENCRYPTION_KEY`), dual-key rotation — zero downtime:**
 1. Generate a new key (`openssl rand -base64 32`).
@@ -152,7 +152,7 @@ built against a known rotation story from day one, not bolted on after.
    (reads try current, fall back to previous) and always encrypt new/updated rows with current.
 3. Deploy — from this point every write uses the new key; every existing 🔒 row is still readable via
    `_PREVIOUS`.
-4. Run the background re-encrypt job (`TODO.md` Phase 2.10) to walk every 🔒 row and rewrite it under
+4. Run the background re-encrypt job (not built yet) to walk every 🔒 row and rewrite it under
    the current key. Safe to run gradually — the app tolerates both keys throughout.
 5. Once the job reports 100% and a spot-check confirms no row still needs the old key, remove
    `NYVRA_FIELD_ENCRYPTION_KEY_PREVIOUS` and deploy again.
