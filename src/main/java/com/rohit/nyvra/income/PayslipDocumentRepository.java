@@ -1,5 +1,6 @@
 package com.rohit.nyvra.income;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -9,4 +10,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface PayslipDocumentRepository extends JpaRepository<PayslipDocument, UUID> {
 
     List<PayslipDocument> findByIncomeEntryId(UUID incomeEntryId);
+
+    List<PayslipDocument> findByIncomeEntryIdIn(Collection<UUID> incomeEntryIds);
 }

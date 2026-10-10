@@ -156,7 +156,7 @@ Items below tick once the draft is signed off.
 
 ### 3.3 Controllers per module (all under `/api/v1`)
 - [x] `AccountController` — list/get/create-manual/update/close/delete (`/api/v1/accounts`; `Idempotency-Key` not yet honoured — needs Redis); `TransactionController` — cursor-paged `/transactions` + `/accounts/{id}/transactions`, get by id (`expenseId` on the response waits for the expense link)
-- [ ] `IncomeController` — sources CRUD, entries CRUD, `POST /income/entries/{id}/payslip` (multipart → MinIO)
+- [x] `IncomeController` — sources CRUD, entries CRUD (`/api/v1/income`; `Idempotency-Key` not yet honoured — needs Redis). Still open: `POST /income/entries/{id}/payslip` (multipart → MinIO), `GET /income/summary`
 - [ ] `ExpenseController` — list, get, update category/necessity, split, rules CRUD; `GET /spending/habits?month=`
 - [ ] `PortfolioController` — holdings list/get, manual holding CRUD, `GET /portfolio/allocation`, `GET /portfolio/xirr`
 - [ ] `NetWorthController` — current, `GET /net-worth/history?from=&to=&granularity=`, manual asset/liability CRUD

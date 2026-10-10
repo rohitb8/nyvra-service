@@ -82,6 +82,14 @@ public class IncomeSource extends AbstractEntity {
         this.active = false;
     }
 
+    public void setActive(boolean active) {
+        this.active = active;
+    }
+
+    public void changeType(IncomeType type) {
+        this.type = Objects.requireNonNull(type, "type");
+    }
+
     public UUID getUserId() {
         return userId;
     }
