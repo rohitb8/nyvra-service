@@ -6,12 +6,14 @@ import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 /**
  * Every query is user-scoped and should carry a {@code valueDate} range where it can, so Postgres
  * prunes partitions instead of scanning every month.
  */
-public interface AccountTransactionRepository extends JpaRepository<AccountTransaction, UUID> {
+public interface AccountTransactionRepository
+        extends JpaRepository<AccountTransaction, UUID>, JpaSpecificationExecutor<AccountTransaction> {
 
     Page<AccountTransaction> findByUserIdOrderByValueDateDescIdDesc(UUID userId, Pageable pageable);
 
