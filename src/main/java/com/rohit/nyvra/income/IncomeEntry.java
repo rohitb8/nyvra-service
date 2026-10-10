@@ -84,6 +84,23 @@ public class IncomeEntry extends AbstractEntity {
         this.origin = Objects.requireNonNull(origin, "origin");
     }
 
+    /** Replaces the editable fields; callers validate the combination first. */
+    public void revise(LocalDate periodStart, LocalDate periodEnd, Money grossAmount, Money netAmount,
+                       LocalDate receivedOn) {
+        if (periodEnd.isBefore(periodStart)) {
+            throw new IllegalArgumentException("periodEnd is before periodStart");
+        }
+        if (netAmount.isGreaterThan(grossAmount)) {
+            throw new IllegalArgumentException("Net amount exceeds gross amount");
+        }
+        this.periodStart = periodStart;
+        this.periodEnd = periodEnd;
+        this.grossAmount = grossAmount.amount();
+        this.netAmount = netAmount.amount();
+        this.currency = grossAmount.currency();
+        this.receivedOn = Objects.requireNonNull(receivedOn, "receivedOn");
+    }
+
     public void linkTransaction(UUID transactionId) {
         this.linkedTransactionId = transactionId;
     }
