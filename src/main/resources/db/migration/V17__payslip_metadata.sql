@@ -1,4 +1,4 @@
--- V10 — Payslip upload metadata: what the API reports about the stored file and where parsing stands.
+-- V17 — Payslip upload metadata: what the API reports about the stored file and where parsing stands.
 -- Additive. payslip_document is empty before this migration (no upload endpoint existed), so the
 -- NOT NULL columns take a placeholder default that is dropped straight away.
 ALTER TABLE payslip_document

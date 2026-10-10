@@ -1,6 +1,6 @@
 package com.rohit.nyvra.income;
 
-/** Where parsing of an uploaded payslip stands; stored as {@code TEXT + CHECK} (V10__payslip_metadata.sql). */
+/** Where parsing of an uploaded payslip stands; stored as {@code TEXT + CHECK} (V17__payslip_metadata.sql). */
 public enum PayslipParseStatus {
     /** Uploaded and waiting for the parser; the state every payslip starts in. */
     PENDING,
