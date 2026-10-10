@@ -4,6 +4,7 @@ import java.io.IOException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rohit.nyvra.common.exception.ApiError;
+import com.rohit.nyvra.common.exception.ErrorCodes;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -22,12 +23,27 @@ import org.springframework.security.web.access.AccessDeniedHandler;
  */
 public class ApiErrorAccessDeniedHandler implements AccessDeniedHandler {
 
+    /** Serialises the error body. */
     private final ObjectMapper objectMapper;
 
+    /**
+     * Creates the handler.
+     *
+     * @param objectMapper mapper used to write the {@link ApiError} body
+     */
     public ApiErrorAccessDeniedHandler(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * Writes the 403 {@link ApiError} response.
+     *
+     * @param request  the rejected request
+     * @param response the response to write to
+     * @param ex       the access-denied failure
+     * @throws IOException if the body cannot be written
+     * @throws ServletException never thrown here; part of the contract
+     */
     @Override
     public void handle(HttpServletRequest request, HttpServletResponse response, AccessDeniedException ex)
             throws IOException, ServletException {
@@ -35,6 +51,7 @@ public class ApiErrorAccessDeniedHandler implements AccessDeniedHandler {
             HttpStatus.FORBIDDEN.value(),
             HttpStatus.FORBIDDEN.getReasonPhrase(),
             "Access denied",
+            ErrorCodes.FORBIDDEN,
             request.getRequestURI(),
             null,
             MDC.get("traceId"));
