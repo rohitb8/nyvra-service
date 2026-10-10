@@ -6,6 +6,11 @@ package com.rohit.nyvra.common.exception;
  */
 public class RateLimitExceededException extends RuntimeException {
 
+    /**
+     * Creates a rate-limit exception.
+     *
+     * @param message safe human-readable summary
+     */
     public RateLimitExceededException(String message) {
         super(message);
     }
