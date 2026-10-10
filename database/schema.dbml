@@ -396,6 +396,7 @@ Table expense {
   category_id uuid [not null, ref: > category.id]
   subcategory_id uuid [ref: > category.id]
   merchant text
+  note text [note: 'V7. free-text; set on split parts']
   necessity necessity [not null]
   origin expense_origin [not null]
   excluded_from_habits bool [not null, default: false]
