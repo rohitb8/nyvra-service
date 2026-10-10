@@ -8,6 +8,14 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
+/**
+ * Request body for creating an income source.
+ *
+ * @param name           label, not blank, at most 80 characters
+ * @param type           kind of income
+ * @param cadence        expected frequency
+ * @param expectedAmount expected amount in INR; required unless {@code cadence} is {@code IRREGULAR}
+ */
 public record CreateIncomeSourceRequest(
     @NotBlank @Size(max = 80) String name,
     @NotNull IncomeType type,

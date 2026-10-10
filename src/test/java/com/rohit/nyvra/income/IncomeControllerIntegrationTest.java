@@ -26,26 +26,50 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
+/**
+ * End-to-end tests of the income API against a real PostgreSQL (Testcontainers) with a stub JWT decoder:
+ * ownership scoping (404 for other users), validation (400), business-rule errors (422 with codes such as
+ * {@code INCOME_PERIOD_OVERLAP}), read-only detected entries (409) and listing behaviour. Each test uses a
+ * fresh subject so tests never see each other's data.
+ */
 @AutoConfigureMockMvc
 class IncomeControllerIntegrationTest extends AbstractIntegrationTest {
 
+    /** Drives the controller through the full security and servlet filter chain. */
     @Autowired
     private MockMvc mockMvc;
 
+    /** Used to insert an {@code AA_DETECTED} entry, which the API cannot create. */
     @Autowired
     private IncomeEntryRepository entries;
 
+    /** Resolves the internal user id that JIT provisioning created for a subject. */
     @Autowired
     private UserProfileRepository users;
 
+    /**
+     * Authenticates a request as the given Keycloak subject, with a derived email claim.
+     *
+     * @param subject the token {@code sub}
+     * @return a request post-processor attaching that JWT
+     */
     private static RequestPostProcessor as(String subject) {
         return jwt().jwt(jwt -> jwt.subject(subject).claim("email", subject + "@nyvra.local"));
     }
 
+    /** @return a unique subject, so each test works with its own user */
     private static String newSubject() {
         return "inc-" + UUID.randomUUID();
     }
 
+    /**
+     * Creates a monthly SALARY source expecting 85000.00 INR through the API and checks the 201 response.
+     *
+     * @param subject the caller
+     * @param name the source name
+     * @return the new source id
+     * @throws Exception on request failure
+     */
     private String createSource(String subject, String name) throws Exception {
         String body = mockMvc.perform(post("/api/v1/income/sources").with(as(subject))
                 .contentType(MediaType.APPLICATION_JSON)
@@ -61,6 +85,17 @@ class IncomeControllerIntegrationTest extends AbstractIntegrationTest {
         return JsonPath.read(body, "$.id");
     }
 
+    /**
+     * Builds a create-entry request body in INR.
+     *
+     * @param sourceId the source id
+     * @param start first covered day
+     * @param end last covered day
+     * @param gross gross amount
+     * @param net net amount
+     * @param receivedOn received-on date
+     * @return the JSON text
+     */
     private static String entryJson(String sourceId, String start, String end, String gross, String net,
                                     String receivedOn) {
         return """
@@ -69,6 +104,18 @@ class IncomeControllerIntegrationTest extends AbstractIntegrationTest {
              "receivedOn":"%s"}""".formatted(sourceId, start, end, gross, net, receivedOn);
     }
 
+    /**
+     * Creates an entry with gross 100000.00 INR, received on the period's last day, and checks the 201 response
+     * shows origin {@code MANUAL} and no payslip.
+     *
+     * @param subject the caller
+     * @param sourceId the source id
+     * @param start first covered day
+     * @param end last covered day
+     * @param net net amount
+     * @return the new entry id
+     * @throws Exception on request failure
+     */
     private String createEntry(String subject, String sourceId, String start, String end, String net)
             throws Exception {
         String body = mockMvc.perform(post("/api/v1/income/entries").with(as(subject))
@@ -82,6 +129,10 @@ class IncomeControllerIntegrationTest extends AbstractIntegrationTest {
         return JsonPath.read(body, "$.id");
     }
 
+    /**
+      * Creating, fetching and patching a source round-trips: the patch changes name and expected amount and leaves
+      * the cadence alone.
+     */
     @Test
     void createsFetchesAndUpdatesASource() throws Exception {
         String subject = newSubject();
@@ -101,6 +152,12 @@ class IncomeControllerIntegrationTest extends AbstractIntegrationTest {
             .andExpect(jsonPath("$.cadence", equalTo("MONTHLY")));
     }
 
+    /**
+      * An IRREGULAR source needs no amount; clearing the amount of a MONTHLY source is 422 EXPECTED_AMOUNT_REQUIRED,
+      * omitting it
+      * is a no-op, switching to IRREGULAR while clearing works, and switching IRREGULAR to MONTHLY without an amount
+      * is 422.
+     */
     @Test
     void irregularSourcesNeedNoAmountAndNullClearsItOnlyForThem() throws Exception {
         String subject = newSubject();
@@ -134,6 +191,7 @@ class IncomeControllerIntegrationTest extends AbstractIntegrationTest {
             .andExpect(jsonPath("$.code", equalTo("EXPECTED_AMOUNT_REQUIRED")));
     }
 
+    /** Creating a MONTHLY source without an expected amount is rejected with 422 EXPECTED_AMOUNT_REQUIRED. */
     @Test
     void createSourceRequiresExpectedAmountUnlessIrregular() throws Exception {
         mockMvc.perform(post("/api/v1/income/sources").with(as(newSubject()))
@@ -143,6 +201,10 @@ class IncomeControllerIntegrationTest extends AbstractIntegrationTest {
             .andExpect(jsonPath("$.code", equalTo("EXPECTED_AMOUNT_REQUIRED")));
     }
 
+    /**
+      * Malformed source requests (missing or blank name, unknown enum, zero or over-precise amount, bad JSON) are
+      * 400, and a non-INR amount is 422 UNSUPPORTED_CURRENCY.
+     */
     @Test
     void rejectsInvalidSourceRequests() throws Exception {
         String subject = newSubject();
@@ -174,6 +236,11 @@ class IncomeControllerIntegrationTest extends AbstractIntegrationTest {
             .andExpect(jsonPath("$.code", equalTo("UNSUPPORTED_CURRENCY")));
     }
 
+    /**
+      * Another user's source and entry are reported as 404 for get, patch and delete, recording an entry against
+      * their source is 404,
+     * they are absent from the stranger's lists, and the owner still sees them with source name and type.
+     */
     @Test
     void anotherUsersSourceAndEntryAre404() throws Exception {
         String owner = newSubject();
@@ -211,6 +278,10 @@ class IncomeControllerIntegrationTest extends AbstractIntegrationTest {
             .andExpect(jsonPath("$.sourceType", equalTo("SALARY")));
     }
 
+    /**
+      * The source list only contains the caller's sources, defaults to name ascending, and supports paging, type and
+      * active filters and an explicit descending sort.
+     */
     @Test
     void sourceListIsPagedFilteredAndSorted() throws Exception {
         String subject = newSubject();
@@ -241,6 +312,11 @@ class IncomeControllerIntegrationTest extends AbstractIntegrationTest {
             .andExpect(jsonPath("$.content[0].name", equalTo("B salary")));
     }
 
+    /**
+      * Both lists reject a bad page size, negative page, unknown sort field and unknown type with 400, and the entry
+      * list also
+     * rejects an unparsable date, a range where {@code to} is before {@code from}, and a non-UUID path id.
+     */
     @Test
     void listRejectsBadPagingAndSortInputWith400() throws Exception {
         String subject = newSubject();
@@ -261,6 +337,10 @@ class IncomeControllerIntegrationTest extends AbstractIntegrationTest {
             .andExpect(status().isBadRequest());
     }
 
+    /**
+      * Deleting an unused source removes it (later 404), while deleting one with entries returns 204 but only
+      * deactivates it and keeps its entries listed.
+     */
     @Test
     void deletingASourceRemovesItOrDeactivatesItWhenItHasEntries() throws Exception {
         String subject = newSubject();
@@ -280,6 +360,10 @@ class IncomeControllerIntegrationTest extends AbstractIntegrationTest {
             .andExpect(jsonPath("$.content[0].sourceName", equalTo("Used")));
     }
 
+    /**
+      * An entry can be created, fetched with its amounts and dates, patched (net and received-on change, gross is
+      * kept), deleted, and is then 404.
+     */
     @Test
     void entryCrudRoundTrip() throws Exception {
         String subject = newSubject();
@@ -306,6 +390,10 @@ class IncomeControllerIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/v1/income/entries/" + entryId).with(as(subject))).andExpect(status().isNotFound());
     }
 
+    /**
+      * The entry list defaults to received-on descending and supports paging, filtering by source, by source type and
+      * by received-on range, and sorting by net amount.
+     */
     @Test
     void entryListFiltersSortsAndPages() throws Exception {
         String subject = newSubject();
@@ -342,6 +430,10 @@ class IncomeControllerIntegrationTest extends AbstractIntegrationTest {
             .andExpect(jsonPath("$.content[0].netAmount.amount", equalTo("80000.00")));
     }
 
+    /**
+      * Net above gross is 422 NET_EXCEEDS_GROSS both when creating an entry and when a patch raises net above the
+      * stored gross.
+     */
     @Test
     void rejectsNetAboveGrossWith422() throws Exception {
         String subject = newSubject();
@@ -359,6 +451,11 @@ class IncomeControllerIntegrationTest extends AbstractIntegrationTest {
             .andExpect(jsonPath("$.code", equalTo("NET_EXCEEDS_GROSS")));
     }
 
+    /**
+      * A period sharing even one day with another entry of the same source is 422 INCOME_PERIOD_OVERLAP, on create
+      * and when moving an entry
+     * onto its neighbour; a different source may cover the same days and re-saving an entry's own period succeeds.
+     */
     @Test
     void rejectsOverlappingPeriodsPerSourceWith422ButAllowsOtherSources() throws Exception {
         String subject = newSubject();
@@ -386,6 +483,11 @@ class IncomeControllerIntegrationTest extends AbstractIntegrationTest {
             .andExpect(status().isOk());
     }
 
+    /**
+      * Entry requests with end before start, zero gross, negative net, missing fields, a malformed date or a patch
+      * moving the end
+     * before the stored start are 400, and an unknown source id is 404.
+     */
     @Test
     void rejectsInvalidEntryRequestsWith400() throws Exception {
         String subject = newSubject();
@@ -421,6 +523,7 @@ class IncomeControllerIntegrationTest extends AbstractIntegrationTest {
             .andExpect(status().isBadRequest());
     }
 
+    /** An AA_DETECTED entry can be read but patching or deleting it is 409 SOURCE_READ_ONLY. */
     @Test
     void aDetectedEntryIsReadOnly() throws Exception {
         String subject = newSubject();
@@ -444,6 +547,7 @@ class IncomeControllerIntegrationTest extends AbstractIntegrationTest {
             .andExpect(jsonPath("$.linkedTransactionId").doesNotExist());
     }
 
+    /** Both list endpoints return 401 without a bearer token. */
     @Test
     void requiresAuthentication() throws Exception {
         mockMvc.perform(get("/api/v1/income/sources")).andExpect(status().isUnauthorized());
