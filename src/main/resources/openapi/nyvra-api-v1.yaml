@@ -10,7 +10,8 @@ info:
     export matches this file.
 
     Covered: users/me (shipped), accounts + transactions, income, expenses + categories +
-    categorisation rules + spending habits, health score.
+    categorisation rules + spending habits, health score, portfolio (instruments, quotes,
+    holdings, summary).
 servers:
   - url: /
     description: Current host
@@ -33,6 +34,8 @@ tags:
     description: Server-computed spending breakdowns.
   - name: Health score
     description: The Financial Health Score (HEALTH_SCORE_SPEC.md).
+  - name: Portfolio
+    description: Instruments, price quotes, holdings and the portfolio summary.
 
 paths:
   # ------------------------------------------------------------------ User
@@ -999,6 +1002,231 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  # ------------------------------------------------------------------ Portfolio
+  /api/v1/portfolio/instruments:
+    get:
+      tags: [Portfolio]
+      operationId: searchInstruments
+      summary: Search instruments
+      description: Shared catalogue (not per user). `q` matches symbol, name and ISIN, case-insensitively.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: assetClass
+          in: query
+          schema: { $ref: '#/components/schemas/AssetClass' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InstrumentPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      tags: [Portfolio]
+      operationId: createInstrument
+      summary: Add an instrument to the catalogue
+      description: |
+        At least one of `isin` and `symbol` is required. `currency` defaults to `INR`.
+        `409 INSTRUMENT_ISIN_EXISTS` when the ISIN is already catalogued.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateInstrumentRequest' }
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Instrument' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/portfolio/instruments/{instrumentId}:
+    parameters:
+      - $ref: '#/components/parameters/InstrumentId'
+    get:
+      tags: [Portfolio]
+      operationId: getInstrument
+      summary: Get one instrument
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Instrument' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/portfolio/instruments/{instrumentId}/quotes:
+    parameters:
+      - $ref: '#/components/parameters/InstrumentId'
+    post:
+      tags: [Portfolio]
+      operationId: recordQuote
+      summary: Record a price for an instrument
+      description: |
+        Manual price entry until a price feed exists. Quotes are shared by all users and drive current
+        valuation of every holding in the instrument. `asOf` defaults to now; `422 QUOTE_IN_FUTURE` when
+        it is later than now.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordQuoteRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Quote' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/portfolio/holdings:
+    get:
+      tags: [Portfolio]
+      operationId: listHoldings
+      summary: List holdings
+      description: Each holding carries its server-computed valuation. Closed (zero-quantity) holdings are left out unless `includeClosed=true`.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: sort
+          in: query
+          description: '`field,asc|desc`. Fields: `openedAt`, `assetClass`, `createdAt`. Default `openedAt,desc`.'
+          schema: { type: array, items: { type: string } }
+          style: form
+          explode: true
+        - name: assetClass
+          in: query
+          schema: { type: array, items: { $ref: '#/components/schemas/AssetClass' } }
+          style: form
+          explode: true
+        - name: includeClosed
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HoldingPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      tags: [Portfolio]
+      operationId: createHolding
+      summary: Record a holding manually
+      description: |
+        Origin is `MANUAL`. `quantity` must be above zero. `422 UNSUPPORTED_CURRENCY` for an instrument
+        not priced in INR; `409 HOLDING_ALREADY_EXISTS` when the caller already has an open holding in the
+        instrument (update that one instead).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateHoldingRequest' }
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Holding' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/portfolio/holdings/{holdingId}:
+    parameters:
+      - $ref: '#/components/parameters/HoldingId'
+    get:
+      tags: [Portfolio]
+      operationId: getHolding
+      summary: Get one holding
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Holding' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    patch:
+      tags: [Portfolio]
+      operationId: updateHolding
+      summary: Update a holding
+      description: |
+        Send `quantity` and/or `avgCost`; at least one is required. A quantity of `0` closes the holding;
+        a positive quantity on a closed holding reopens it. `409 HOLDING_READ_ONLY` for holdings that were
+        not entered manually.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateHoldingRequest' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Holding' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    delete:
+      tags: [Portfolio]
+      operationId: deleteHolding
+      summary: Delete a holding
+      description: Permanent. `409 HOLDING_READ_ONLY` for holdings that were not entered manually.
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/portfolio/summary:
+    get:
+      tags: [Portfolio]
+      operationId: getPortfolioSummary
+      summary: Portfolio totals and asset-class allocation
+      description: |
+        Server-computed over the caller's open INR holdings; the client displays these as returned.
+        `currentValue` counts only holdings that have a price; `unrealisedGain` only holdings with both a
+        price and a cost. Holdings in other currencies are counted in `excludedHoldingCount` until FX exists.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PortfolioSummary' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
 components:
   securitySchemes:
     keycloak:
@@ -1070,6 +1298,16 @@ components:
       required: true
       schema: { type: string, format: uuid }
 
+    InstrumentId:
+      name: instrumentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    HoldingId:
+      name: holdingId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
   headers:
     Location:
       description: URL of the created resource.
@@ -1823,3 +2061,136 @@ components:
               asOf: { type: string, format: date-time }
               overall: { type: number, format: double, description: "Absent for INSUFFICIENT_DATA points." }
               band: { $ref: '#/components/schemas/ScoreBand' }
+
+    # ---------------------------------------------------------------- portfolio
+    AssetClass:
+      type: string
+      enum: [EQUITY, MUTUAL_FUND, BOND, NPS, EPF, FOREIGN_EQUITY, CASH, GOLD, REIT]
+
+    Quantity:
+      type: string
+      pattern: '^\d{1,13}(\.\d{1,6})?$'
+      description: Non-negative decimal string, up to 6 decimals (quantities, prices, per-unit costs). Responses always carry 6.
+      example: '10.500000'
+
+    Instrument:
+      type: object
+      required: [id, assetClass, currency]
+      properties:
+        id: { type: string, format: uuid }
+        isin: { type: string, pattern: '^[A-Z]{2}[A-Z0-9]{9}[0-9]$' }
+        symbol: { type: string }
+        name: { type: string }
+        assetClass: { $ref: '#/components/schemas/AssetClass' }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        country: { type: string, pattern: '^[A-Z]{2}$' }
+
+    InstrumentPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required: [content]
+          properties:
+            content:
+              type: array
+              items: { $ref: '#/components/schemas/Instrument' }
+
+    CreateInstrumentRequest:
+      type: object
+      required: [assetClass]
+      properties:
+        isin: { type: string, pattern: '^[A-Z]{2}[A-Z0-9]{9}[0-9]$' }
+        symbol: { type: string, minLength: 1, maxLength: 40 }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        assetClass: { $ref: '#/components/schemas/AssetClass' }
+        currency: { type: string, pattern: '^[A-Z]{3}$', default: INR }
+        country: { type: string, pattern: '^[A-Z]{2}$' }
+
+    RecordQuoteRequest:
+      type: object
+      required: [price]
+      properties:
+        price: { $ref: '#/components/schemas/Quantity' }
+        asOf: { type: string, format: date-time, description: Defaults to now; must not be in the future. }
+
+    Quote:
+      type: object
+      required: [instrumentId, asOf, price, source]
+      properties:
+        instrumentId: { type: string, format: uuid }
+        asOf: { type: string, format: date-time }
+        price: { $ref: '#/components/schemas/Quantity' }
+        source: { type: string, enum: [AA, MANUAL, DERIVED, GMAIL] }
+
+    CreateHoldingRequest:
+      type: object
+      required: [instrumentId, quantity]
+      properties:
+        instrumentId: { type: string, format: uuid }
+        quantity: { $ref: '#/components/schemas/Quantity' }
+        avgCost: { $ref: '#/components/schemas/Quantity' }
+        openedAt: { type: string, format: date-time, description: Defaults to now; must not be in the future. }
+
+    UpdateHoldingRequest:
+      type: object
+      minProperties: 1
+      properties:
+        quantity: { $ref: '#/components/schemas/Quantity' }
+        avgCost: { $ref: '#/components/schemas/Quantity' }
+
+    Holding:
+      type: object
+      required: [id, instrument, assetClass, quantity, currency, source, openedAt, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        instrument: { $ref: '#/components/schemas/Instrument' }
+        assetClass: { $ref: '#/components/schemas/AssetClass' }
+        quantity: { $ref: '#/components/schemas/Quantity' }
+        avgCost: { $ref: '#/components/schemas/Quantity' }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        investedValue: { $ref: '#/components/schemas/Money', description: "quantity × avgCost. Absent when avgCost is unknown." }
+        latestPrice: { $ref: '#/components/schemas/Quantity' }
+        priceAsOf: { type: string, format: date-time }
+        currentValue: { $ref: '#/components/schemas/Money', description: "quantity × latestPrice. Absent when there is no price." }
+        unrealisedGain: { $ref: '#/components/schemas/Money', description: "currentValue − investedValue (negative for a loss). Absent unless both exist." }
+        unrealisedGainPct: { type: number, description: "Percent points of investedValue, 2 decimals. Absent unless defined." }
+        source: { type: string, enum: [AA, MANUAL, DERIVED, GMAIL] }
+        openedAt: { type: string, format: date-time }
+        closedAt: { type: string, format: date-time, description: Absent while the holding is open. }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    HoldingPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required: [content]
+          properties:
+            content:
+              type: array
+              items: { $ref: '#/components/schemas/Holding' }
+
+    PortfolioSummary:
+      type: object
+      required: [currency, investedValue, currentValue, holdingCount, unpricedHoldingCount, excludedHoldingCount, allocation]
+      properties:
+        currency: { type: string, example: INR }
+        investedValue: { $ref: '#/components/schemas/Money', description: Cost basis of holdings whose cost is known. }
+        currentValue: { $ref: '#/components/schemas/Money', description: Market value of holdings that have a price. }
+        unrealisedGain: { $ref: '#/components/schemas/Money', description: Over holdings with both a price and a cost. Absent when none. }
+        unrealisedGainPct: { type: number, description: Percent points of those holdings' cost. Absent when undefined. }
+        holdingCount: { type: integer, description: Open INR holdings counted. }
+        unpricedHoldingCount: { type: integer }
+        excludedHoldingCount: { type: integer, description: Open holdings in other currencies, left out until FX is supported. }
+        pricesAsOf: { type: string, format: date-time, description: Latest quote time used. Absent when nothing is priced. }
+        allocation:
+          type: array
+          description: Largest first. A holding contributes its current value, or its cost basis when it has no price.
+          items:
+            type: object
+            required: [assetClass, value, percent, holdingCount]
+            properties:
+              assetClass: { $ref: '#/components/schemas/AssetClass' }
+              value: { $ref: '#/components/schemas/Money' }
+              percent: { type: number, description: Share of the total allocated value, percent points. }
+              holdingCount: { type: integer }

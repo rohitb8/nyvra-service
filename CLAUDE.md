@@ -85,7 +85,8 @@ src/main/java/com/rohit/nyvra/
   user/                first real module — profile, JIT provisioning, GET /users/me
   accounts/ income/ expense/
                        entities + repositories (V2–V4); no services/controllers yet
-  ingestion/ networth/ portfolio/ aggregator/ analytics/
+  portfolio/           instruments, manual quotes, holdings CRUD, summary/allocation (V6 tables)
+  ingestion/ networth/ aggregator/ analytics/
                        module placeholders (package-info) — build out per DOMAIN_MODEL.md
 src/main/resources/
   application.yml + application-{local,dev,staging,prod}.yml

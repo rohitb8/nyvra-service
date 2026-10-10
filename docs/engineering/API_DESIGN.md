@@ -235,9 +235,43 @@ The score response mirrors `HEALTH_SCORE_SPEC.md` §1, with three deliberate dif
 3. `inputsHash` is internal (skip-recompute bookkeeping) and **not** exposed. `rulesetVersion` and
    `scoreSpecVersion` are, so a historical score stays explainable.
 
+### Portfolio (`portfolio` module)
+
+| Method | Path | Purpose | Notes |
+|---|---|---|---|
+| GET | `/portfolio/instruments` | search the shared catalogue | `?q=` (symbol/name/ISIN) `&assetClass=`; paged |
+| POST | `/portfolio/instruments` | add an instrument | needs `isin` or `symbol`; `409 INSTRUMENT_ISIN_EXISTS` |
+| GET | `/portfolio/instruments/{id}` | one instrument | |
+| POST | `/portfolio/instruments/{id}/quotes` | record a price | manual until a feed exists; shared by all users; `422 QUOTE_IN_FUTURE` |
+| GET | `/portfolio/holdings` | list holdings | `?assetClass=&includeClosed=`; sort `openedAt`/`assetClass`/`createdAt`; each row carries its valuation |
+| POST | `/portfolio/holdings` | record a holding | origin `MANUAL`; `409 HOLDING_ALREADY_EXISTS`, `422 UNSUPPORTED_CURRENCY` |
+| GET | `/portfolio/holdings/{id}` | one holding | |
+| PATCH | `/portfolio/holdings/{id}` | change quantity / average cost | quantity `0` closes, positive reopens; `409 HOLDING_READ_ONLY` for non-manual |
+| DELETE | `/portfolio/holdings/{id}` | delete | hard delete, manual holdings only |
+| GET | `/portfolio/summary` | totals + allocation by asset class | server-computed, open INR holdings only |
+
+Decisions taken for this slice:
+
+1. **Quantities, prices and per-unit costs are decimal strings with 6 decimals**, never JSON numbers;
+   money derived from them (`investedValue`, `currentValue`, `unrealisedGain`) is `Money` (2 decimals,
+   `HALF_UP`). Percentages are numbers in percent points, 2 decimals.
+2. **All valuation is computed server-side** (`PortfolioValuation`). Fields that cannot be derived
+   (no cost, no price yet) are omitted, never sent as zero; the summary's counts say how complete
+   each total is.
+3. **INR only in v1**, like income: a holding in an instrument priced in another currency is
+   `422 UNSUPPORTED_CURRENCY`, and any such holding already stored is counted in
+   `excludedHoldingCount` but not valued until FX exists.
+4. **One open holding per instrument per user.** Account linkage (`account_id`) is not in the API
+   yet: `portfolio` and `accounts` are peer modules, so the link waits for the event path.
+5. **XIRR, drift against targets and valuation history** are not here: they need cash-flow records
+   and the price feed. `valuation_snapshot` stays unused for now.
+6. **Instruments and quotes are shared reference data.** Any signed-in user can add an instrument or
+   record a manual price, which then affects every user's valuation. That is acceptable only until a
+   price feed and an admin path replace it (see §10).
+
 ### Out of this draft (later passes)
 
-Portfolio, net worth, dashboard summary, trends, insights, goals, aggregator/consents, and the
+Net worth, dashboard summary, trends, insights, goals, aggregator/consents, and the
 rest of `/users/me` (profile/preferences/consents/export/deletion). `GET /users/me` is in the spec
 because it already ships.
 
@@ -264,3 +298,6 @@ because it already ships.
 6. **Manual transactions.** `transaction.source` allows `MANUAL`, but this draft has no
    `POST /transactions`: manual cash spending is entered as a manual *expense*, and manual
    accounts only carry a balance. Confirm that's enough for v1.
+7. **Who may write instruments and quotes?** The portfolio slice lets any signed-in user add an
+   instrument and record a manual price, and both are shared by every user. Before real multi-user
+   use, restrict writes to a price feed / admin role, or make manual prices per-user.
