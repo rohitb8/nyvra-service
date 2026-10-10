@@ -11,10 +11,10 @@ has actually been applied yet. Right now:
 
 - **Applied (V1):** `user_profile` (minus `email`/`email_hash`/`date_of_birth`/`dpdp_consent_at` —
   those are proposed), `user_preferences`, `data_consent_record`.
-- **Applied (V2–V4.1):** Accounts (V2, plus the shared `shedlock` table and `ensure_monthly_partition()`
-  helper), Income (V3), Expenses (V4) and the system category seed (V4.1).
-- **Proposed, not yet built:** the email-encryption retrofit, then Portfolio → Net Worth → Analytics →
-  Ingestion. Version numbers are assigned when each migration is written (`decisions.md` §5).
+- **Applied (V2–V6):** Accounts (V2, plus the shared `shedlock` table and `ensure_monthly_partition()`
+  helper), Income (V3), Expenses (V4), the system category seed (V4.1), the email-encryption retrofit
+  (V5) and Portfolio (V6 — the first hypertables, `price_quote` and `valuation_snapshot`).
+- **Proposed, not yet built:** Net Worth → Analytics → Ingestion. Version numbers are assigned when each migration is written (`decisions.md` §5).
 
 The actual, ground-truth migration history is `database/migrations/` — a symlink to
 `src/main/resources/db/migration/`, the real folder Flyway executes against Postgres. `schema.dbml`
