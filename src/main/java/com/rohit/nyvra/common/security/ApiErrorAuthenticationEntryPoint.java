@@ -4,6 +4,7 @@ import java.io.IOException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rohit.nyvra.common.exception.ApiError;
+import com.rohit.nyvra.common.exception.ErrorCodes;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -23,12 +24,27 @@ import org.springframework.security.web.AuthenticationEntryPoint;
  */
 public class ApiErrorAuthenticationEntryPoint implements AuthenticationEntryPoint {
 
+    /** Serialises the error body. */
     private final ObjectMapper objectMapper;
 
+    /**
+     * Creates the handler.
+     *
+     * @param objectMapper mapper used to write the {@link ApiError} body
+     */
     public ApiErrorAuthenticationEntryPoint(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * Writes the 401 {@link ApiError} response.
+     *
+     * @param request  the rejected request
+     * @param response the response to write to
+     * @param ex       the authentication failure
+     * @throws IOException if the body cannot be written
+     * @throws ServletException never thrown here; part of the contract
+     */
     @Override
     public void commence(HttpServletRequest request, HttpServletResponse response, AuthenticationException ex)
             throws IOException, ServletException {
@@ -36,6 +52,7 @@ public class ApiErrorAuthenticationEntryPoint implements AuthenticationEntryPoin
             HttpStatus.UNAUTHORIZED.value(),
             HttpStatus.UNAUTHORIZED.getReasonPhrase(),
             "Missing or invalid access token",
+            ErrorCodes.UNAUTHENTICATED,
             request.getRequestURI(),
             null,
             MDC.get("traceId"));

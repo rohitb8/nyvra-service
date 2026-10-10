@@ -143,8 +143,8 @@ Items below tick once the draft is signed off.
 - [ ] Resource naming, plural nouns, nesting (`/accounts/{id}/transactions`)
 - [ ] **Pagination**: `?page=&size=` + envelope `{content,page,size,totalElements,totalPages}`; **cursor** (`?cursor=&limit=`) for `transaction`/`expense` (high volume) — decide, document both if mixed
 - [ ] Sorting `?sort=field,dir`; per-resource filter params
-- [ ] Error envelope = `ApiError`; enumerate codes 400/401/403/404/409/422/429/500 with example bodies
-- [ ] **Idempotency**: `Idempotency-Key` header on creating POSTs; store key + response hash in Redis with TTL
+- [x] Error envelope = `ApiError`; enumerate codes 400/401/403/404/409/422/429/500 with example bodies
+- [x] **Idempotency**: `Idempotency-Key` header on creating POSTs; store key + response hash in Redis with TTL
 - [ ] **Money in JSON**: string, not number (avoid float); currency alongside — document
 - [ ] Dates: `LocalDate` → `yyyy-MM-dd`; `Instant` → UTC `…Z`; server UTC, client renders `Asia/Kolkata`
 - [ ] Versioning + deprecation-header policy (breaking → `/api/v2`)
