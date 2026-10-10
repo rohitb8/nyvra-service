@@ -28,7 +28,7 @@ import com.rohit.nyvra.common.persistence.AbstractEntity;
 @Table(name = "expense")
 public class Expense extends AbstractEntity {
 
-    @Column(name = "date", nullable = false, updatable = false)
+    @Column(name = "date", nullable = false)
     private LocalDate date;
 
     @Column(name = "user_id", nullable = false, updatable = false)
@@ -39,6 +39,9 @@ public class Expense extends AbstractEntity {
 
     @Column(name = "parent_expense_id", updatable = false)
     private UUID parentExpenseId;
+
+    @Column(name = "note")
+    private String note;
 
     @Column(name = "amount", nullable = false, precision = 19, scale = 2)
     private BigDecimal amount;
@@ -87,11 +90,12 @@ public class Expense extends AbstractEntity {
     }
 
     public static Expense splitOf(Expense parent, Money amount, UUID categoryId, UUID subcategoryId,
-                                  Necessity necessity) {
+                                  Necessity necessity, String note) {
         parent.getAmount().requireSameCurrency(amount);
         Expense child = new Expense(parent.userId, parent.date, amount, categoryId, subcategoryId,
             parent.merchant, necessity, ExpenseOrigin.SPLIT, null);
         child.parentExpenseId = parent.getId();
+        child.note = note;
         return child;
     }
 
@@ -99,6 +103,20 @@ public class Expense extends AbstractEntity {
         this.categoryId = Objects.requireNonNull(categoryId, "categoryId");
         this.subcategoryId = subcategoryId;
         this.necessity = Objects.requireNonNull(necessity, "necessity");
+    }
+
+    public void setMerchant(String merchant) {
+        this.merchant = merchant;
+    }
+
+    /** Manual expenses only — the service enforces that; the DB moves the row to the new month's partition. */
+    public void reprice(Money amount) {
+        this.amount = amount.amount();
+        this.currency = amount.currency();
+    }
+
+    public void redate(LocalDate date) {
+        this.date = Objects.requireNonNull(date, "date");
     }
 
     public void setExcludedFromHabits(boolean excludedFromHabits) {
@@ -119,6 +137,10 @@ public class Expense extends AbstractEntity {
 
     public UUID getParentExpenseId() {
         return parentExpenseId;
+    }
+
+    public String getNote() {
+        return note;
     }
 
     public Money getAmount() {

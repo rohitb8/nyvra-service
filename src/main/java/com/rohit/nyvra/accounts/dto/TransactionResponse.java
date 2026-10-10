@@ -18,12 +18,14 @@ public record TransactionResponse(
     String narration,
     String counterparty,
     MoneyDto balanceAfter,
-    RecordSource source) {
+    RecordSource source,
+    UUID expenseId) {
 
-    public static TransactionResponse from(AccountTransaction t) {
+    /** @param expenseId the expense derived from this transaction; {@code null} if none */
+    public static TransactionResponse from(AccountTransaction t, UUID expenseId) {
         return new TransactionResponse(
             t.getId(), t.getAccountId(), t.getBookingDate(), t.getValueDate(), MoneyDto.from(t.getAmount()),
             t.getDirection(), t.getNarration(), t.getCounterparty(), MoneyDto.from(t.getBalanceAfter()),
-            t.getSource());
+            t.getSource(), expenseId);
     }
 }
