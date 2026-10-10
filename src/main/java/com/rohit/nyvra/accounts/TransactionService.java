@@ -4,12 +4,15 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import com.rohit.nyvra.accounts.dto.TransactionResponse;
 import com.rohit.nyvra.common.api.CursorPage;
+import com.rohit.nyvra.common.api.DateIdCursor;
 import com.rohit.nyvra.common.exception.BadRequestException;
 import com.rohit.nyvra.common.exception.ResourceNotFoundException;
+import com.rohit.nyvra.expense.ExpenseLinks;
 import com.rohit.nyvra.user.CurrentUserService;
 import jakarta.persistence.criteria.Predicate;
 import org.springframework.data.domain.Sort;
@@ -28,12 +31,14 @@ public class TransactionService {
 
     private final AccountTransactionRepository transactions;
     private final FinancialAccountRepository accounts;
+    private final ExpenseLinks expenseLinks;
     private final CurrentUserService currentUser;
 
     public TransactionService(AccountTransactionRepository transactions, FinancialAccountRepository accounts,
-                              CurrentUserService currentUser) {
+                              ExpenseLinks expenseLinks, CurrentUserService currentUser) {
         this.transactions = transactions;
         this.accounts = accounts;
+        this.expenseLinks = expenseLinks;
         this.currentUser = currentUser;
     }
 
@@ -47,8 +52,8 @@ public class TransactionService {
         }
         String fingerprint = "a=%s;f=%s;t=%s;d=%s".formatted(
             accountIds == null ? "" : accountIds.stream().map(UUID::toString).sorted().toList(), from, to, direction);
-        TransactionCursor after = cursor == null || cursor.isBlank()
-            ? null : TransactionCursor.decode(cursor, fingerprint);
+        DateIdCursor after = cursor == null || cursor.isBlank()
+            ? null : DateIdCursor.decode(cursor, fingerprint);
 
         Specification<AccountTransaction> spec = (root, query, cb) -> {
             List<Predicate> where = new ArrayList<>();
@@ -67,9 +72,9 @@ public class TransactionService {
             }
             if (after != null) {
                 where.add(cb.or(
-                    cb.lessThan(root.<LocalDate>get("valueDate"), after.valueDate()),
+                    cb.lessThan(root.<LocalDate>get("valueDate"), after.date()),
                     cb.and(
-                        cb.equal(root.get("valueDate"), after.valueDate()),
+                        cb.equal(root.get("valueDate"), after.date()),
                         cb.lessThan(root.<UUID>get("id"), after.id()))));
             }
             return cb.and(where.toArray(Predicate[]::new));
@@ -82,9 +87,10 @@ public class TransactionService {
         String next = null;
         if (hasMore) {
             AccountTransaction last = page.get(page.size() - 1);
-            next = new TransactionCursor(last.getValueDate(), last.getId()).encode(fingerprint);
+            next = new DateIdCursor(last.getValueDate(), last.getId()).encode(fingerprint);
         }
-        return new CursorPage<>(page.stream().map(TransactionResponse::from).toList(), next, limit);
+        Map<UUID, UUID> links = expenseLinks.expenseIdsByTransactionId(userId, page.stream().map(AccountTransaction::getId).toList());
+        return new CursorPage<>(page.stream().map(t -> TransactionResponse.from(t, links.get(t.getId()))).toList(), next, limit);
     }
 
     /** One account's ledger; 404 if the account isn't the caller's (or was deleted). */
@@ -102,7 +108,8 @@ public class TransactionService {
         UUID userId = currentUser.currentUser().getId();
         return transactions.findById(id)
             .filter(t -> t.getUserId().equals(userId))
-            .map(TransactionResponse::from)
+            .map(t -> TransactionResponse.from(t,
+                expenseLinks.expenseIdsByTransactionId(userId, List.of(id)).get(id)))
             .orElseThrow(() -> ResourceNotFoundException.of("Transaction", id));
     }
 }

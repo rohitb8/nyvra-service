@@ -20,6 +20,10 @@ import com.rohit.nyvra.AbstractIntegrationTest;
 import com.rohit.nyvra.common.money.Money;
 import com.rohit.nyvra.common.partition.MonthlyPartitions;
 import com.rohit.nyvra.common.persistence.RecordSource;
+import com.rohit.nyvra.expense.Expense;
+import com.rohit.nyvra.expense.ExpenseOrigin;
+import com.rohit.nyvra.expense.ExpenseRepository;
+import com.rohit.nyvra.expense.Necessity;
 import com.rohit.nyvra.user.UserProfile;
 import com.rohit.nyvra.user.UserProfileMother;
 import com.rohit.nyvra.user.UserProfileRepository;
@@ -49,6 +53,9 @@ class TransactionControllerIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private MonthlyPartitions partitions;
+
+    @Autowired
+    private ExpenseRepository expenses;
 
     private record Seed(String subject, UserProfile user, FinancialAccount account) {
     }
@@ -168,6 +175,26 @@ class TransactionControllerIntegrationTest extends AbstractIntegrationTest {
             .andExpect(jsonPath("$.balanceAfter").doesNotExist());
         mockMvc.perform(get("/api/v1/transactions/" + other.getId()).with(as(mine.subject())))
             .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void exposesTheExpenseDerivedFromATransaction() throws Exception {
+        Seed seed = seedUser();
+        AccountTransaction withExpense = add(seed, JAN, "-40.00", "grocer");
+        AccountTransaction without = add(seed, JAN, "-5.00", "tea");
+        partitions.ensureMonth("expense", java.time.YearMonth.from(JAN));
+        UUID food = UUID.fromString("40a8ed3d-45f2-50fe-8806-e94e6a8eb931");
+        Expense expense = expenses.save(new Expense(seed.user().getId(), JAN, Money.inr("40.00"), food, null, "Grocer",
+            Necessity.ESSENTIAL, ExpenseOrigin.AA, withExpense.getId()));
+
+        mockMvc.perform(get("/api/v1/transactions/" + withExpense.getId()).with(as(seed.subject())))
+            .andExpect(jsonPath("$.expenseId", equalTo(expense.getId().toString())));
+        mockMvc.perform(get("/api/v1/transactions/" + without.getId()).with(as(seed.subject())))
+            .andExpect(jsonPath("$.expenseId").doesNotExist());
+        mockMvc.perform(get("/api/v1/transactions").with(as(seed.subject())))
+            .andExpect(jsonPath("$.content[?(@.narration=='grocer')].expenseId")
+                .value(org.hamcrest.Matchers.contains(expense.getId().toString())))
+            .andExpect(jsonPath("$.content[?(@.narration=='tea')].expenseId").isEmpty());
     }
 
     @Test

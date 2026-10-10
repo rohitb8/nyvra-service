@@ -98,8 +98,8 @@ class ExpenseRepositoryIntegrationTest extends AbstractIntegrationTest {
         LocalDate today = LocalDate.now();
         Expense parent = expenses.save(new Expense(user.getId(), today, Money.inr("1500.00"), FOOD, null,
             "BigBasket", Necessity.ESSENTIAL, ExpenseOrigin.MANUAL, null));
-        expenses.save(Expense.splitOf(parent, Money.inr("1000.00"), FOOD, null, Necessity.ESSENTIAL));
-        expenses.save(Expense.splitOf(parent, Money.inr("500.00"), FOOD, null, Necessity.DISCRETIONARY));
+        expenses.save(Expense.splitOf(parent, Money.inr("1000.00"), FOOD, null, Necessity.ESSENTIAL, null));
+        expenses.save(Expense.splitOf(parent, Money.inr("500.00"), FOOD, null, Necessity.DISCRETIONARY, null));
 
         assertThat(expenses.findByParentExpenseIdAndDate(parent.getId(), today))
             .hasSize(2)
