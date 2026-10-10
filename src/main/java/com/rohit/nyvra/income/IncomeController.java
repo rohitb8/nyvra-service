@@ -9,6 +9,8 @@ import com.rohit.nyvra.income.dto.CreateIncomeEntryRequest;
 import com.rohit.nyvra.income.dto.CreateIncomeSourceRequest;
 import com.rohit.nyvra.income.dto.IncomeEntryResponse;
 import com.rohit.nyvra.income.dto.IncomeSourceResponse;
+import com.rohit.nyvra.income.dto.IncomeSummaryResponse;
+import com.rohit.nyvra.income.dto.PayslipResponse;
 import com.rohit.nyvra.income.dto.UpdateIncomeEntryRequest;
 import com.rohit.nyvra.income.dto.UpdateIncomeSourceRequest;
 import io.swagger.v3.oas.annotations.Operation;
@@ -24,6 +26,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -33,8 +36,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 /**
@@ -48,16 +53,25 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 @SecurityRequirement(name = "keycloak")
 public class IncomeController {
 
-    /** Use-case layer every endpoint delegates to. */
+    /** Use-case layer every source and entry endpoint delegates to. */
     private final IncomeService service;
+    /** Use-case layer for payslip upload and lookup. */
+    private final PayslipService payslipService;
+    /** Use-case layer for the rolling summary. */
+    private final IncomeSummaryService summaryService;
 
     /**
      * Creates the controller.
      *
-     * @param service the income use-case service
+     * @param service        the income use-case service
+     * @param payslipService the payslip use-case service
+     * @param summaryService the summary use-case service
      */
-    public IncomeController(IncomeService service) {
+    public IncomeController(IncomeService service, PayslipService payslipService,
+                            IncomeSummaryService summaryService) {
         this.service = service;
+        this.payslipService = payslipService;
+        this.summaryService = summaryService;
     }
 
     // ------------------------------------------------------------------ sources
@@ -222,6 +236,51 @@ public class IncomeController {
     @Operation(summary = "Delete an income entry")
     public void deleteEntry(@PathVariable UUID entryId) {
         service.deleteEntry(entryId);
+    }
+
+    // ------------------------------------------------------------------ payslips
+
+    /**
+     * Uploads a payslip for an entry, replacing any previous one. Parsing is asynchronous; the payslip starts
+     * {@code PENDING}.
+     *
+     * @param entryId the entry id
+     * @param file    the PDF, PNG or JPEG file, at most 5 MB
+     * @return 201 with the payslip and a {@code Location} header; 404 for another user's entry, 413 if too
+     *         large, 415 for another file type
+     */
+    @PostMapping(value = "/entries/{entryId}/payslip", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Upload a payslip for an entry")
+    public ResponseEntity<PayslipResponse> uploadPayslip(@PathVariable UUID entryId,
+                                                         @RequestPart("file") MultipartFile file) {
+        PayslipResponse created = payslipService.upload(entryId, file);
+        return ResponseEntity.created(ServletUriComponentsBuilder.fromCurrentRequest().build().toUri()).body(created);
+    }
+
+    /**
+     * Returns the payslip metadata and parsed fields of an entry; the file itself is not served in v1.
+     *
+     * @param entryId the entry id
+     * @return the payslip; 404 if the entry is not the caller's or has none
+     */
+    @GetMapping("/entries/{entryId}/payslip")
+    @Operation(summary = "Get payslip metadata and parsed fields")
+    public PayslipResponse getPayslip(@PathVariable UUID entryId) {
+        return payslipService.get(entryId);
+    }
+
+    // ------------------------------------------------------------------ summary
+
+    /**
+     * Returns the server-computed rolling income summary.
+     *
+     * @param window trailing window in months: 3 (default), 6 or 12
+     * @return the summary; any other window is rejected with 400
+     */
+    @GetMapping("/summary")
+    @Operation(summary = "Rolling income summary")
+    public IncomeSummaryResponse getSummary(@RequestParam(defaultValue = "3") int window) {
+        return summaryService.summarize(window);
     }
 
     /**

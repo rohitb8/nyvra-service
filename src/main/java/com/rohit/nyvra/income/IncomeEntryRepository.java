@@ -1,6 +1,8 @@
 package com.rohit.nyvra.income;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -69,4 +71,33 @@ public interface IncomeEntryRepository
           and e.periodStart <= :end and e.periodEnd >= :start""")
     boolean existsOverlapping(@Param("sourceId") UUID sourceId, @Param("excludeId") UUID excludeId,
                               @Param("start") LocalDate start, @Param("end") LocalDate end);
+
+    /**
+     * Sums a user's income per source type over a received-on range, for the rolling summary.
+     *
+     * @param userId the owning user
+     * @param from   earliest {@code receivedOn}, inclusive
+     * @param to     latest {@code receivedOn}, inclusive
+     * @return one row per type that has at least one entry in the range
+     */
+    @Query("""
+        select s.type as type, sum(e.netAmount) as totalNet, sum(e.grossAmount) as totalGross
+        from IncomeEntry e join IncomeSource s on s.id = e.sourceId
+        where e.userId = :userId and e.receivedOn between :from and :to
+        group by s.type""")
+    List<TypeTotals> sumByType(@Param("userId") UUID userId, @Param("from") LocalDate from,
+                               @Param("to") LocalDate to);
+
+    /** One row of {@link #sumByType}: the net and gross totals of a single income type. */
+    interface TypeTotals {
+
+        /** @return the income type */
+        IncomeType getType();
+
+        /** @return the summed net amount */
+        BigDecimal getTotalNet();
+
+        /** @return the summed gross amount */
+        BigDecimal getTotalGross();
+    }
 }
