@@ -10,6 +10,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
@@ -29,6 +30,9 @@ import org.testcontainers.utility.DockerImageName;
  * would stop it after the first test class while Spring's cached context still points at its port.
  * It starts once in the static initialiser; Testcontainers' reaper removes it when the JVM exits.
  *
+ * <p>Redis (the {@code Idempotency-Key} store) runs the same way, on {@code redis:7-alpine} as in
+ * {@code docker-compose.yml}, wired in through {@code @ServiceConnection(name = "redis")}.
+ *
  * <p>Field-encryption and blind-index keys are generated randomly once per JVM, so no key material is
  * ever committed (not even a test one) and the cached Spring context is shared across test classes.
  */
@@ -37,24 +41,44 @@ import org.testcontainers.utility.DockerImageName;
 @Import(TestSecurityConfig.class)
 public abstract class AbstractIntegrationTest {
 
+    /** Shared Postgres/Timescale container, started once per JVM. */
     @ServiceConnection
     static final PostgreSQLContainer<?> POSTGRES =
         new PostgreSQLContainer<>(DockerImageName.parse("timescale/timescaledb-ha:pg16")
             .asCompatibleSubstituteFor("postgres"));
 
+    /** Shared Redis container, started once per JVM. */
+    @ServiceConnection(name = "redis")
+    static final GenericContainer<?> REDIS =
+        new GenericContainer<>(DockerImageName.parse("redis:7-alpine")).withExposedPorts(6379);
+
     static {
         POSTGRES.start();
+        REDIS.start();
     }
 
+    /** Random field-encryption key for this JVM. */
     private static final String FIELD_ENCRYPTION_KEY = randomKey();
+
+    /** Random blind-index key for this JVM. */
     private static final String BLIND_INDEX_KEY = randomKey();
 
+    /**
+     * Supplies the per-JVM encryption keys to the Spring context.
+     *
+     * @param registry the property registry to add to
+     */
     @DynamicPropertySource
     static void cryptoKeys(DynamicPropertyRegistry registry) {
         registry.add("nyvra.crypto.field-encryption-key", () -> FIELD_ENCRYPTION_KEY);
         registry.add("nyvra.crypto.blind-index-key", () -> BLIND_INDEX_KEY);
     }
 
+    /**
+     * Generates a random 256-bit key, Base64-encoded.
+     *
+     * @return the encoded key
+     */
     private static String randomKey() {
         byte[] key = new byte[32];
         new SecureRandom().nextBytes(key);

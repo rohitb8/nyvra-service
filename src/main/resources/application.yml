@@ -50,6 +50,11 @@ spring:
     compose:
       enabled: false
 
+  servlet:
+    multipart:
+      max-file-size: 5MB      # payslip uploads; the service also checks, for a clearer 413
+      max-request-size: 6MB
+
 server:
   port: 8080
   shutdown: graceful

@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.stream.Stream;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.rohit.nyvra.common.idempotency.IdempotencyFilter;
+import com.rohit.nyvra.common.idempotency.IdempotencyStore;
 import com.rohit.nyvra.common.logging.CorrelationIdFilter;
 import com.rohit.nyvra.common.logging.UserIdMdcFilter;
 import com.rohit.nyvra.common.security.ApiErrorAccessDeniedHandler;
@@ -35,9 +37,18 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 @EnableMethodSecurity
 public class SecurityConfig {
 
+    /** Origins allowed by CORS ({@code nyvra.cors.allowed-origins}). */
     private final List<String> allowedOrigins;
+
+    /** Mapper used to write error bodies from filters. */
     private final ObjectMapper objectMapper;
 
+    /**
+     * Creates the security configuration.
+     *
+     * @param allowedOrigins CORS origins for the web client
+     * @param objectMapper   mapper for filter-written error bodies
+     */
     public SecurityConfig(
             @Value("${nyvra.cors.allowed-origins:http://localhost:4200}") List<String> allowedOrigins,
             ObjectMapper objectMapper) {
@@ -45,8 +56,16 @@ public class SecurityConfig {
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * Builds the stateless filter chain: bearer-token auth, then correlation, user-id and idempotency filters.
+     *
+     * @param http             the Spring Security builder
+     * @param idempotencyStore Redis-backed store behind the {@code Idempotency-Key} support
+     * @return the filter chain
+     * @throws Exception if the chain cannot be built
+     */
     @Bean
-    SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain filterChain(HttpSecurity http, IdempotencyStore idempotencyStore) throws Exception {
         http
             .csrf(csrf -> csrf.disable())
             .cors(Customizer.withDefaults())
@@ -70,11 +89,17 @@ public class SecurityConfig {
             // Neither is a @Component — registered here explicitly so their position is unambiguous
             // rather than order-guessed. See their Javadoc for why.
             .addFilterBefore(new CorrelationIdFilter(), BearerTokenAuthenticationFilter.class)
-            .addFilterAfter(new UserIdMdcFilter(), BearerTokenAuthenticationFilter.class);
+            .addFilterAfter(new UserIdMdcFilter(), BearerTokenAuthenticationFilter.class)
+            // Needs the resolved caller, so it follows the auth filters (see its Javadoc).
+            .addFilterAfter(new IdempotencyFilter(idempotencyStore, objectMapper), UserIdMdcFilter.class);
         return http.build();
     }
 
-    /** Maps Keycloak {@code realm_access.roles} and {@code resource_access.*.roles} to {@code ROLE_*} authorities. */
+    /**
+     * Maps Keycloak {@code realm_access.roles} and {@code resource_access.*.roles} to {@code ROLE_*} authorities.
+     *
+     * @return the converter used for JWT authentication
+     */
     @Bean
     JwtAuthenticationConverter jwtAuthenticationConverter() {
         JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
@@ -82,6 +107,7 @@ public class SecurityConfig {
         return converter;
     }
 
+    /** Pulls the realm roles out of the token as {@code ROLE_*} authorities. */
     @SuppressWarnings("unchecked")
     private static Collection<GrantedAuthority> extractAuthorities(Jwt jwt) {
         var realmAccess = jwt.getClaimAsMap("realm_access");
@@ -96,13 +122,18 @@ public class SecurityConfig {
             .toList();
     }
 
+    /**
+     * CORS for {@code /api/**}; exposes {@code Idempotent-Replayed} and accepts {@code Idempotency-Key}.
+     *
+     * @return the CORS configuration source
+     */
     @Bean
     CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOrigins(allowedOrigins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept"));
-        config.setExposedHeaders(List.of("Location"));
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Idempotency-Key"));
+        config.setExposedHeaders(List.of("Location", "Idempotent-Replayed"));
         config.setAllowCredentials(true);
         config.setMaxAge(3600L);
 
