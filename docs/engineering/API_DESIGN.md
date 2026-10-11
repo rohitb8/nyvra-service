@@ -235,9 +235,20 @@ The score response mirrors `HEALTH_SCORE_SPEC.md` §1, with three deliberate dif
 3. `inputsHash` is internal (skip-recompute bookkeeping) and **not** exposed. `rulesetVersion` and
    `scoreSpecVersion` are, so a historical score stays explainable.
 
+### Insights (`analytics` module)
+
+| Method | Path | What | Notes |
+|---|---|---|---|
+| GET | `/insights` | the user's insights | `?status=ACTIVE\|DISMISSED\|SUPERSEDED` (default `ACTIVE`), `?severity=` (repeatable), `page`/`size`; ordered `CRITICAL` > `WARN` > `INFO`, newest first within a severity |
+| POST | `/insights/{insightId}/dismiss` | hide one | idempotent; superseded → `409 INSIGHT_SUPERSEDED`; unknown or another user's → `404` |
+
+Insights are raised and cleared by the rules engine, not by the client, so there is no create or
+delete. A rule has at most one `ACTIVE` insight: a changed finding supersedes the old one, an
+unchanged one is left alone, and a dismissed insight stays dismissed until its finding changes.
+
 ### Out of this draft (later passes)
 
-Portfolio, net worth, dashboard summary, trends, insights, goals, aggregator/consents, and the
+Portfolio, net worth, dashboard summary, trends, goals, aggregator/consents, and the
 rest of `/users/me` (profile/preferences/consents/export/deletion). `GET /users/me` is in the spec
 because it already ships.
 

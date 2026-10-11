@@ -10,7 +10,7 @@ info:
     export matches this file.
 
     Covered: users/me (shipped), accounts + transactions, income, expenses + categories +
-    categorisation rules + spending habits, health score.
+    categorisation rules + spending habits, health score, insights.
 servers:
   - url: /
     description: Current host
@@ -33,6 +33,8 @@ tags:
     description: Server-computed spending breakdowns.
   - name: Health score
     description: The Financial Health Score (HEALTH_SCORE_SPEC.md).
+  - name: Insights
+    description: Findings the rules engine raises (FINANCIAL_RULES.md), most serious first.
 
 paths:
   # ------------------------------------------------------------------ User
@@ -999,6 +1001,65 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  # ------------------------------------------------------------------ Insights
+  /api/v1/insights:
+    get:
+      tags: [Insights]
+      operationId: listInsights
+      summary: List insights
+      description: |
+        The caller's insights, most serious first (`CRITICAL`, `WARN`, `INFO`), newest first within a
+        severity (FINANCIAL_RULES §7 precedence). Defaults to `ACTIVE` ones. A rule has at most one
+        `ACTIVE` insight; when its finding changes the old one becomes `SUPERSEDED`.
+      parameters:
+        - name: status
+          in: query
+          description: Defaults to `ACTIVE`.
+          schema: { $ref: '#/components/schemas/InsightStatus' }
+        - name: severity
+          in: query
+          description: Only these severities. Omit for all.
+          schema: { type: array, items: { $ref: '#/components/schemas/InsightSeverity' } }
+          style: form
+          explode: true
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InsightPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/insights/{insightId}/dismiss:
+    parameters:
+      - name: insightId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Insights]
+      operationId: dismissInsight
+      summary: Dismiss an insight
+      description: |
+        Hides the insight from the default list. Dismissing an already dismissed insight is a no-op `200`.
+        A dismissed insight stays dismissed while the finding is unchanged and comes back as a new
+        `ACTIVE` insight if the finding changes. A `SUPERSEDED` insight can't be dismissed
+        (`409 INSIGHT_SUPERSEDED`).
+      responses:
+        '200':
+          description: Dismissed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Insight' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
 components:
   securitySchemes:
     keycloak:
@@ -1823,3 +1884,34 @@ components:
               asOf: { type: string, format: date-time }
               overall: { type: number, format: double, description: "Absent for INSUFFICIENT_DATA points." }
               band: { $ref: '#/components/schemas/ScoreBand' }
+
+    InsightSeverity:
+      type: string
+      enum: [INFO, WARN, CRITICAL]
+    InsightStatus:
+      type: string
+      enum: [ACTIVE, DISMISSED, SUPERSEDED]
+
+    Insight:
+      type: object
+      required: [id, ruleId, severity, status, message, raisedAt]
+      properties:
+        id: { type: string, format: uuid }
+        ruleId: { type: string, example: LOW_EMERGENCY_FUND, description: "Stable id of the rule that raised it; the UI may key copy or icons on it." }
+        severity: { $ref: '#/components/schemas/InsightSeverity' }
+        status: { $ref: '#/components/schemas/InsightStatus' }
+        message: { type: string, description: "Ready-to-show text." }
+        evidence: { type: object, additionalProperties: true, description: "The numbers behind the finding. Shape depends on `ruleId`." }
+        raisedAt: { type: string, format: date-time }
+        dismissedAt: { type: string, format: date-time, description: "Absent unless dismissed." }
+        rulesetVersion: { type: string, example: '2026.1', description: "Absent on rows raised before versions were stamped." }
+
+    InsightPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required: [content]
+          properties:
+            content:
+              type: array
+              items: { $ref: '#/components/schemas/Insight' }
