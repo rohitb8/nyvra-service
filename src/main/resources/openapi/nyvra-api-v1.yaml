@@ -17,6 +17,8 @@ servers:
 security:
   - keycloak: []
 tags:
+  - name: Ingestion
+    description: Account Aggregator consents and the data fetches run under them.
   - name: User
     description: The caller's profile.
   - name: Accounts
@@ -999,6 +1001,269 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  # ------------------------------------------------------------------ Ingestion
+  /api/v1/ingestion/consents:
+    get:
+      tags: [Ingestion]
+      operationId: listAggregatorConsents
+      summary: List aggregator consents
+      description: The caller's Account Aggregator consents, newest first.
+      parameters:
+        - name: status
+          in: query
+          description: Only these states. Omit for all.
+          schema: { type: array, items: { $ref: '#/components/schemas/ConsentStatus' } }
+          style: form
+          explode: true
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConsentPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      tags: [Ingestion]
+      operationId: requestAggregatorConsent
+      summary: Request an aggregator consent
+      description: |
+        Starts a consent request at the Account Aggregator; the consent is `REQUESTED` until the user approves
+        it there and the client calls `activate`. Data is only ever fetched while a consent is `ACTIVE`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateConsentRequest' }
+      responses:
+        '201':
+          description: Created. `Location` points at the consent.
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Consent' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/ingestion/consents/{consentId}:
+    parameters:
+      - $ref: '#/components/parameters/ConsentId'
+    get:
+      tags: [Ingestion]
+      operationId: getAggregatorConsent
+      summary: Get one consent
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Consent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/ingestion/consents/{consentId}/activate:
+    parameters:
+      - $ref: '#/components/parameters/ConsentId'
+    post:
+      tags: [Ingestion]
+      operationId: activateAggregatorConsent
+      summary: Activate an approved consent
+      description: |
+        Called after the user approved the consent at the aggregator, with the consent artefact id it issued.
+        `REQUESTED` -> `ACTIVE`; any other state is `409 INVALID_CONSENT_STATE`. `422 AGGREGATOR_REJECTED` if
+        the aggregator does not confirm the approval.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ActivateConsentRequest' }
+      responses:
+        '200':
+          description: Active
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Consent' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/ingestion/consents/{consentId}/pause:
+    parameters:
+      - $ref: '#/components/parameters/ConsentId'
+    post:
+      tags: [Ingestion]
+      operationId: pauseAggregatorConsent
+      summary: Pause a consent
+      description: '`ACTIVE` -> `PAUSED`; no fetch while paused. Any other state is `409 INVALID_CONSENT_STATE`.'
+      responses:
+        '200':
+          description: Paused
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Consent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/ingestion/consents/{consentId}/resume:
+    parameters:
+      - $ref: '#/components/parameters/ConsentId'
+    post:
+      tags: [Ingestion]
+      operationId: resumeAggregatorConsent
+      summary: Resume a paused consent
+      description: '`PAUSED` -> `ACTIVE`. Any other state is `409 INVALID_CONSENT_STATE`.'
+      responses:
+        '200':
+          description: Active
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Consent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/ingestion/consents/{consentId}/revoke:
+    parameters:
+      - $ref: '#/components/parameters/ConsentId'
+    post:
+      tags: [Ingestion]
+      operationId: revokeAggregatorConsent
+      summary: Revoke a consent
+      description: |
+        Withdraws the consent at the aggregator. Already-imported data stays; no further fetch is possible.
+        Revoking a `REVOKED` or `EXPIRED` consent is `409 INVALID_CONSENT_STATE`.
+      responses:
+        '200':
+          description: Revoked
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Consent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/ingestion/consents/{consentId}/fetches:
+    parameters:
+      - $ref: '#/components/parameters/ConsentId'
+    post:
+      tags: [Ingestion]
+      operationId: triggerAggregatorFetch
+      summary: Fetch data under a consent
+      description: |
+        Pulls data for the range (default: the consent's whole range), stores the raw payloads encrypted and
+        normalises them into events for the other modules. Idempotent per consent and range: repeating the call
+        returns the existing session with `200` instead of fetching again. An aggregator failure is recorded on
+        the session (`status: FAILED`, `error`) and still returns `202`. The body may be omitted.
+        `409 CONSENT_NOT_ACTIVE` unless the consent is `ACTIVE` and unexpired;
+        `422 FETCH_RANGE_INVALID` if the range is reversed or outside the consent's range.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TriggerFetchRequest' }
+      responses:
+        '200':
+          description: This consent and range were fetched before; the existing session.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FetchSession' }
+        '202':
+          description: A new fetch ran. `Location` points at the session.
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FetchSession' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/ingestion/fetches:
+    get:
+      tags: [Ingestion]
+      operationId: listAggregatorFetches
+      summary: List fetch sessions
+      description: The caller's fetch sessions, newest first. Raw provider data is never exposed.
+      parameters:
+        - name: consentId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          description: Only these states. Omit for all.
+          schema: { type: array, items: { $ref: '#/components/schemas/FetchStatus' } }
+          style: form
+          explode: true
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FetchSessionPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/ingestion/fetches/{fetchId}:
+    parameters:
+      - $ref: '#/components/parameters/FetchId'
+    get:
+      tags: [Ingestion]
+      operationId: getAggregatorFetch
+      summary: Get one fetch session
+      description: Includes the summary of its latest normalisation run, with counts of anything that could not be mapped.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FetchSession' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/ingestion/fetches/{fetchId}/normalise:
+    parameters:
+      - $ref: '#/components/parameters/FetchId'
+    post:
+      tags: [Ingestion]
+      operationId: renormaliseAggregatorFetch
+      summary: Re-run normalisation for a fetch
+      description: |
+        Normalises the stored raw records again and republishes the events. Safe: every transaction carries a
+        stable `dedupKey`, so consumers do not double-count. Only a `COMPLETED` fetch (`409 FETCH_NOT_COMPLETED`)
+        whose raw records have not been purged.
+      responses:
+        '200':
+          description: The session with its new normalisation summary.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FetchSession' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
 components:
   securitySchemes:
     keycloak:
@@ -1010,6 +1275,16 @@ components:
           scopes: {}
 
   parameters:
+    ConsentId:
+      name: consentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    FetchId:
+      name: fetchId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     Page:
       name: page
       in: query
@@ -1823,3 +2098,93 @@ components:
               asOf: { type: string, format: date-time }
               overall: { type: number, format: double, description: "Absent for INSUFFICIENT_DATA points." }
               band: { $ref: '#/components/schemas/ScoreBand' }
+
+    # ---- Ingestion
+    ConsentStatus:
+      type: string
+      enum: [REQUESTED, ACTIVE, PAUSED, REVOKED, EXPIRED]
+    FetchStatus:
+      type: string
+      enum: [PENDING, RUNNING, COMPLETED, FAILED]
+
+    CreateConsentRequest:
+      type: object
+      required: [aaHandle, dataRangeFrom, dataRangeTo]
+      properties:
+        aaHandle: { type: string, maxLength: 120, example: someone@onemoney }
+        fipList: { type: array, maxItems: 50, items: { type: string, maxLength: 80 }, description: Providers to cover; omit for all. }
+        dataRangeFrom: { type: string, format: date }
+        dataRangeTo: { type: string, format: date, description: Must not precede `dataRangeFrom` (`422 INVALID_DATA_RANGE`). }
+        frequency: { type: string, maxLength: 30, example: 1/DAY }
+
+    ActivateConsentRequest:
+      type: object
+      required: [consentId]
+      properties:
+        consentId: { type: string, maxLength: 200, description: The consent artefact id the aggregator issued on approval. }
+
+    TriggerFetchRequest:
+      type: object
+      properties:
+        from: { type: string, format: date, description: Defaults to the consent's start. }
+        to: { type: string, format: date, description: Defaults to the consent's end. }
+
+    Consent:
+      type: object
+      required: [id, aaHandle, fipList, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        aaHandle: { type: string }
+        fipList: { type: array, items: { type: string } }
+        status: { $ref: '#/components/schemas/ConsentStatus' }
+        dataRangeFrom: { type: string, format: date }
+        dataRangeTo: { type: string, format: date }
+        frequency: { type: string }
+        expiresAt: { type: string, format: date-time, description: Absent until the consent is activated. }
+        createdAt: { type: string, format: date-time }
+
+    ConsentPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required: [content]
+          properties:
+            content:
+              type: array
+              items: { $ref: '#/components/schemas/Consent' }
+
+    NormalisationSummary:
+      type: object
+      required: [id, status, producedEvents, unmapped, ranAt]
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, example: COMPLETED }
+        producedEvents: { type: integer, minimum: 0, description: Normalised events published to the other modules. }
+        unmapped:
+          type: object
+          additionalProperties: { type: integer }
+          description: Counts of anything not mapped, by reason (for example `UNSUPPORTED_MUTUAL_FUND`, `INVALID_TRANSACTION`, `MALFORMED_PAYLOAD`).
+        ranAt: { type: string, format: date-time }
+
+    FetchSession:
+      type: object
+      required: [id, consentId, status, fiTypes, requestedAt]
+      properties:
+        id: { type: string, format: uuid }
+        consentId: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/FetchStatus' }
+        fiTypes: { type: array, items: { type: string }, description: Financial-information types the fetch returned. }
+        requestedAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time, description: Absent while running. }
+        error: { type: string, description: Short reason; present only when `FAILED`. }
+        normalisation: { $ref: '#/components/schemas/NormalisationSummary' }
+
+    FetchSessionPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required: [content]
+          properties:
+            content:
+              type: array
+              items: { $ref: '#/components/schemas/FetchSession' }

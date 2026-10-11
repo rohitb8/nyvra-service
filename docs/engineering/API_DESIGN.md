@@ -235,6 +235,33 @@ The score response mirrors `HEALTH_SCORE_SPEC.md` §1, with three deliberate dif
 3. `inputsHash` is internal (skip-recompute bookkeeping) and **not** exposed. `rulesetVersion` and
    `scoreSpecVersion` are, so a historical score stays explainable.
 
+### Ingestion (`ingestion` module)
+
+| Method | Path | What | Notes |
+|---|---|---|---|
+| GET / POST | `/ingestion/consents` | list / request an aggregator consent | page; filter `status`; new consents are `REQUESTED`; `422 INVALID_DATA_RANGE`, `422 AGGREGATOR_REJECTED` |
+| GET | `/ingestion/consents/{consentId}` | one consent | another user's → `404` |
+| POST | `/ingestion/consents/{consentId}/activate` | confirm the user approved it | body `{consentId}` (the aggregator's artefact id); `REQUESTED` → `ACTIVE`; otherwise `409 INVALID_CONSENT_STATE` |
+| POST | `/ingestion/consents/{consentId}/pause` · `/resume` · `/revoke` | change state | `ACTIVE`→`PAUSED`, `PAUSED`→`ACTIVE`, any live state→`REVOKED`; wrong source state → `409 INVALID_CONSENT_STATE` |
+| POST | `/ingestion/consents/{consentId}/fetches` | fetch and normalise data | optional body `{from, to}` (default: the consent's range); `202` new / `200` existing (idempotent per consent + range); `409 CONSENT_NOT_ACTIVE`, `422 FETCH_RANGE_INVALID` |
+| GET | `/ingestion/fetches` | list fetch sessions | page; filters `consentId`, `status` |
+| GET | `/ingestion/fetches/{fetchId}` | one session | includes the latest `normalisation` summary |
+| POST | `/ingestion/fetches/{fetchId}/normalise` | re-run normalisation | only `COMPLETED` (`409 FETCH_NOT_COMPLETED`); republishes the same events with the same `dedupKey`s |
+
+Design notes:
+1. **No aggregator specifics leak out.** `AggregatorGateway` is the only port to the provider; the default
+   implementation is a stub (`nyvra.ingestion.aa.provider=stub`) that approves every consent and returns no data,
+   until a real provider is chosen.
+2. **Raw data is never returned.** Provider payloads are stored encrypted (`raw_financial_record.raw_json`) with a
+   `purge_after` date (`nyvra.ingestion.raw-retention-days`, default 30); the API exposes only counts. The scheduled
+   purge job is not built yet.
+3. **Downstream work hangs off events, not calls.** Normalising publishes `TransactionsIngested` (one per account,
+   each transaction with a stable `dedupKey`) and, on failure, `IngestionFailed`. Categorisation by narration/MCC
+   rules is meant to listen to `TransactionsIngested`; writing the ledger and expenses from it is a follow-up.
+4. **Fetches run inline today** (the request returns after normalisation) behind a seam that can move to a queue
+   worker without changing this API. Only `DEPOSIT` payloads are mapped; other FI types are counted under
+   `normalisation.unmapped` rather than dropped silently.
+
 ### Out of this draft (later passes)
 
 Portfolio, net worth, dashboard summary, trends, insights, goals, aggregator/consents, and the
