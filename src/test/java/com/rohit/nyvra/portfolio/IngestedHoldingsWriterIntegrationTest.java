@@ -132,4 +132,67 @@ class IngestedHoldingsWriterIntegrationTest extends AbstractIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT quantity FROM portfolio_holding WHERE user_id = ?", BigDecimal.class, user))
             .isEqualByComparingTo("3");
     }
+
+    /**
+     * Builds a holdings event for a named folio with the given ISINs, each at 5 units.
+     *
+     * @param user  owner
+     * @param folio provider-side account reference
+     * @param isins ISINs the folio reports
+     * @return the event
+     */
+    private static HoldingsIngested folioEvent(UUID user, String folio, String... isins) {
+        List<IngestedHolding> list = java.util.Arrays.stream(isins)
+            .map(i -> new IngestedHolding(i, "Fund " + i, new BigDecimal("5.000000"), new BigDecimal("10.000000"),
+                new BigDecimal("50.00")))
+            .toList();
+        return new HoldingsIngested(user, UUID.randomUUID(), "CAMS", folio, PayloadType.MUTUAL_FUND, list);
+    }
+
+    /** The same fund in two folios is two positions, each following its own folio. */
+    @Test
+    void keepsSameFundInTwoFoliosSeparate() {
+        UUID user = newUser();
+        String isin = isin();
+
+        publisher.publishEvent(folioEvent(user, "F1", isin));
+        publisher.publishEvent(folioEvent(user, "F2", isin));
+
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM portfolio_holding WHERE user_id = ? AND closed_at IS NULL",
+            Integer.class, user)).isEqualTo(2);
+    }
+
+    /** A holding missing from a later payload of its folio is closed; other folios and holdings stay open. */
+    @Test
+    void closesPositionWhenHoldingVanishesFromItsFolio() {
+        UUID user = newUser();
+        String kept = isin();
+        String gone = isin();
+        String otherFolio = isin();
+
+        publisher.publishEvent(folioEvent(user, "F1", kept, gone));
+        publisher.publishEvent(folioEvent(user, "F2", otherFolio));
+        publisher.publishEvent(folioEvent(user, "F1", kept));
+
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM portfolio_holding WHERE user_id = ? AND closed_at IS NULL",
+            Integer.class, user)).isEqualTo(2);
+        Map<String, Object> closed = jdbc.queryForMap(
+            "SELECT h.quantity, h.closed_at FROM portfolio_holding h JOIN instrument i ON i.id = h.instrument_id "
+                + "WHERE h.user_id = ? AND i.isin = ?", user, gone);
+        assertThat((BigDecimal) closed.get("quantity")).isEqualByComparingTo("0");
+        assertThat(closed.get("closed_at")).isNotNull();
+    }
+
+    /** A manual position is never closed by a payload that does not mention it. */
+    @Test
+    void doesNotCloseManualPositionsOnVanish() {
+        UUID user = newUser();
+        Instrument instrument = instruments.save(new Instrument(isin(), null, "Mine", AssetClass.MUTUAL_FUND, "INR", "IN"));
+        holdings.save(new PortfolioHolding(user, instrument, new BigDecimal("3"), null, RecordSource.MANUAL, Instant.now()));
+
+        publisher.publishEvent(folioEvent(user, "F1", isin()));
+
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM portfolio_holding WHERE user_id = ? AND closed_at IS NULL",
+            Integer.class, user)).isEqualTo(2);
+    }
 }

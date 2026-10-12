@@ -58,6 +58,13 @@ public class PortfolioHolding extends AbstractEntity {
     @Column(name = "source", nullable = false)
     private RecordSource source;
 
+    /**
+     * The provider account (folio or demat) an ingested position came from, as {@code fipId|accountRef};
+     * {@code null} for manual positions and for ingested ones that predate the column.
+     */
+    @Column(name = "source_ref")
+    private String sourceRef;
+
     /** When the position was opened. */
     @Column(name = "opened_at", nullable = false)
     private Instant openedAt;
@@ -97,6 +104,32 @@ public class PortfolioHolding extends AbstractEntity {
         requireNonNegative(avgCost);
         this.quantity = quantity;
         this.avgCost = avgCost;
+    }
+
+    /**
+     * Opens a position reported by a provider account.
+     *
+     * @param userId     owning user, required
+     * @param instrument the held instrument, required
+     * @param quantity   units held, greater than zero
+     * @param avgCost    average cost per unit, or {@code null}
+     * @param source     where the position came from, required
+     * @param openedAt   when it was opened, required
+     * @param sourceRef  the reporting account, as {@code fipId|accountRef}
+     */
+    public PortfolioHolding(UUID userId, Instrument instrument, BigDecimal quantity, BigDecimal avgCost,
+                            RecordSource source, Instant openedAt, String sourceRef) {
+        this(userId, instrument, quantity, avgCost, source, openedAt);
+        this.sourceRef = sourceRef;
+    }
+
+    /**
+     * Records which provider account reported this position.
+     *
+     * @param ref the reporting account, as {@code fipId|accountRef}
+     */
+    public void claimFor(String ref) {
+        this.sourceRef = ref;
     }
 
     /**
@@ -176,6 +209,11 @@ public class PortfolioHolding extends AbstractEntity {
     /** @return where the position came from */
     public RecordSource getSource() {
         return source;
+    }
+
+    /** @return the reporting provider account, or {@code null} */
+    public String getSourceRef() {
+        return sourceRef;
     }
 
     /** @return when the position was opened */
