@@ -143,6 +143,16 @@ public class AggregatorConsent extends AbstractEntity {
     }
 
     /**
+     * Moves {@code ACTIVE} or {@code PAUSED} to {@code EXPIRED} once the consent has run past its expiry.
+     *
+     * @throws ConflictException if the consent is not {@code ACTIVE} or {@code PAUSED}
+     */
+    public void expire() {
+        requireStatus("expire", ConsentStatus.ACTIVE, ConsentStatus.PAUSED);
+        this.status = ConsentStatus.EXPIRED;
+    }
+
+    /**
      * Tells whether data may be fetched now: {@code ACTIVE} and not past its expiry.
      *
      * @param now the current instant

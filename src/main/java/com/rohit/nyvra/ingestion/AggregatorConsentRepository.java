@@ -1,5 +1,6 @@
 package com.rohit.nyvra.ingestion;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -8,6 +9,8 @@ import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 /** Persistence access for {@link AggregatorConsent}; every read that serves the API is user-scoped. */
 public interface AggregatorConsentRepository extends JpaRepository<AggregatorConsent, UUID> {
@@ -47,4 +50,20 @@ public interface AggregatorConsentRepository extends JpaRepository<AggregatorCon
      * @return the user's consents
      */
     List<AggregatorConsent> findByUserId(UUID userId);
+
+    /**
+     * Finds consents in the given states whose expiry has passed, for the expiry job.
+     *
+     * @param statuses the states that can still expire
+     * @param before   the instant expiries are compared with
+     * @param pageable how many to read
+     * @return a page of lapsed consents, oldest expiry first
+     */
+    @Query("""
+        SELECT c FROM AggregatorConsent c
+        WHERE c.status IN :statuses AND c.expiresAt IS NOT NULL AND c.expiresAt < :before
+        ORDER BY c.expiresAt
+        """)
+    List<AggregatorConsent> findLapsed(@Param("statuses") Collection<ConsentStatus> statuses,
+                                       @Param("before") Instant before, Pageable pageable);
 }

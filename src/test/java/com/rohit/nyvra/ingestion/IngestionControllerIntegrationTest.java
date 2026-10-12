@@ -265,7 +265,7 @@ class IngestionControllerIntegrationTest extends AbstractIntegrationTest {
             .andExpect(jsonPath("$.status").value("COMPLETED"))
             .andExpect(jsonPath("$.fiTypes[0]").value("DEPOSIT"))
             .andExpect(jsonPath("$.normalisation.producedEvents").value(1))
-            .andExpect(jsonPath("$.normalisation.unmapped.UNSUPPORTED_MUTUAL_FUND").value(1))
+            .andExpect(jsonPath("$.normalisation.unmapped.MALFORMED_PAYLOAD").value(1))
             .andReturn().getResponse().getContentAsString();
         String fetchId = JsonPath.read(body, "$.id");
 
