@@ -10,8 +10,9 @@ info:
     export matches this file.
 
     Covered: users/me (shipped), accounts + transactions, income, expenses + categories +
-    categorisation rules + spending habits, health score, net worth, insights, portfolio (instruments, quotes,
-    holdings, summary).
+    categorisation rules + spending habits, health score, net worth, insights, ingestion, portfolio
+    (instruments, quotes, holdings, summary, returns, valuation history, FX, price feed), goals and the
+    dashboard summary.
 servers:
   - url: /
     description: Current host
@@ -41,7 +42,11 @@ tags:
   - name: Net worth
     description: Assets minus liabilities, its trend, and hand-maintained assets and liabilities.
   - name: Portfolio
-    description: Instruments, price quotes, holdings and the portfolio summary.
+    description: Instruments, price quotes, holdings, the portfolio summary, returns, FX and the price feed.
+  - name: Goals
+    description: Savings goals, their contributions and server-computed progress.
+  - name: Dashboard
+    description: One-call summary for the home screen.
 
 paths:
   # ------------------------------------------------------------------ User
@@ -1564,9 +1569,10 @@ paths:
     post:
       tags: [Portfolio]
       operationId: recordQuote
-      summary: Record a price for an instrument
+      summary: Record a price for an instrument (admin only)
       description: |
-        Manual price entry until a price feed exists. Quotes are shared by all users and drive current
+        Manual price entry until a price feed exists. Quotes are shared by all users, so only users with the
+        ADMIN realm role may record one; everyone else receives 403. Quotes drive current
         valuation of every holding in the instrument. `asOf` defaults to now; `422 QUOTE_IN_FUTURE` when
         it is later than now.
       requestBody:
@@ -1582,6 +1588,7 @@ paths:
               schema: { $ref: '#/components/schemas/Quote' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: Not an admin }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Unprocessable' }
         '500': { $ref: '#/components/responses/InternalError' }
@@ -1716,6 +1723,272 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  # ------------------------------------------------------------------ Portfolio extras
+  /api/v1/portfolio/returns:
+    get:
+      tags: [Portfolio]
+      operationId: getPortfolioReturns
+      summary: Annualised return (XIRR)
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ReturnsResponse' } } } }
+  /api/v1/portfolio/valuation-history:
+    get:
+      tags: [Portfolio]
+      operationId: getValuationHistory
+      summary: Portfolio value over time
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: interval, in: query, schema: { type: string, enum: [DAILY, WEEKLY, MONTHLY], default: DAILY } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ValuationHistoryResponse' } } } }
+        '400': { description: Inverted range or more than 400 points }
+  /api/v1/portfolio/fx-rates:
+    get:
+      tags: [Portfolio]
+      operationId: listFxRates
+      summary: List FX rates against INR
+      parameters:
+        - { name: currency, in: query, required: true, schema: { type: string, pattern: '^[A-Z]{3}$' } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/FxRateResponse' } } } } }
+    post:
+      tags: [Portfolio]
+      operationId: recordFxRate
+      summary: Set an FX rate (admin only)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RecordFxRateRequest' } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/FxRateResponse' } } } }
+        '403': { description: Not an admin }
+        '422': { description: RATE_IN_FUTURE }
+  /api/v1/portfolio/fx-rates/convert:
+    get:
+      tags: [Portfolio]
+      operationId: convertAmount
+      summary: Convert an amount between currencies
+      parameters:
+        - { name: amount, in: query, required: true, schema: { type: string } }
+        - { name: from, in: query, required: true, schema: { type: string } }
+        - { name: to, in: query, required: true, schema: { type: string } }
+        - { name: date, in: query, schema: { type: string, format: date } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ConversionResponse' } } } }
+        '422': { description: FX_RATE_UNAVAILABLE }
+  /api/v1/portfolio/price-feed/sync:
+    post:
+      tags: [Portfolio]
+      operationId: syncPriceFeed
+      summary: Pull prices and FX rates from the price feed (admin only)
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/PriceFeedSyncResponse' } } } }
+        '403': { description: Not an admin }
+
+  # ------------------------------------------------------------------ Goals
+  /api/v1/goals:
+    get:
+      tags: [Goals]
+      operationId: listGoals
+      summary: List goals
+      description: Each goal carries its progress as of today (Asia/Kolkata).
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: status
+          in: query
+          description: Only goals in these states. Omitted means all.
+          schema: { type: array, items: { $ref: '#/components/schemas/GoalStatus' } }
+          style: form
+          explode: true
+        - name: sort
+          in: query
+          description: '`field,asc|desc`. Fields: `name`, `targetDate`, `createdAt`. Default `targetDate,asc`.'
+          schema: { type: array, items: { type: string } }
+          style: form
+          explode: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GoalPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      tags: [Goals]
+      operationId: createGoal
+      summary: Create a goal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateGoalRequest' }
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Goal' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422':
+          description: "`UNSUPPORTED_CURRENCY`, `GOAL_DATES_INVALID` or `GOAL_TARGET_DATE_IN_PAST`."
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/goals/{goalId}:
+    parameters:
+      - $ref: '#/components/parameters/GoalId'
+    get:
+      tags: [Goals]
+      operationId: getGoal
+      summary: Get one goal
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Goal' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    patch:
+      tags: [Goals]
+      operationId: updateGoal
+      summary: Update a goal
+      description: Omitted fields are unchanged. Start date and currency are fixed at creation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateGoalRequest' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Goal' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422':
+          description: "`UNSUPPORTED_CURRENCY` or `GOAL_DATES_INVALID`."
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    delete:
+      tags: [Goals]
+      operationId: deleteGoal
+      summary: Delete a goal
+      description: Removes the goal and all its contributions. Use `status=ARCHIVED` to keep history instead.
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/goals/{goalId}/contributions:
+    parameters:
+      - $ref: '#/components/parameters/GoalId'
+    get:
+      tags: [Goals]
+      operationId: listGoalContributions
+      summary: List contributions to a goal
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: sort
+          in: query
+          description: '`field,asc|desc`. Fields: `contributedOn`, `createdAt`. Default `contributedOn,desc`.'
+          schema: { type: array, items: { type: string } }
+          style: form
+          explode: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GoalContributionPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      tags: [Goals]
+      operationId: addGoalContribution
+      summary: Add a contribution to a goal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateGoalContributionRequest' }
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GoalContribution' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: "`GOAL_ARCHIVED` — archived goals don't accept contributions."
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '422':
+          description: "`UNSUPPORTED_CURRENCY` or `CONTRIBUTION_DATE_IN_FUTURE`."
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/goals/{goalId}/contributions/{contributionId}:
+    parameters:
+      - $ref: '#/components/parameters/GoalId'
+      - name: contributionId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [Goals]
+      operationId: deleteGoalContribution
+      summary: Delete a contribution
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ------------------------------------------------------------------ Dashboard
+  /api/v1/dashboard/summary:
+    get:
+      tags: [Dashboard]
+      operationId: getDashboardSummary
+      summary: Dashboard summary
+      description: >-
+        One call for the home screen. Each section is produced by its own module; a section that fails to load
+        is omitted and named in `unavailable`, and the rest is still returned with 200.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DashboardSummary' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
 components:
   securitySchemes:
     keycloak:
@@ -1804,6 +2077,11 @@ components:
       schema: { type: string, format: uuid }
     HoldingId:
       name: holdingId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    GoalId:
+      name: goalId
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -2942,3 +3220,193 @@ components:
               value: { $ref: '#/components/schemas/Money' }
               percent: { type: number, description: Share of the total allocated value, percent points. }
               holdingCount: { type: integer }
+
+    # ---- Portfolio extras
+    ReturnsResponse:
+      type: object
+      required: [includedCount, excludedCount, asOf, holdings]
+      properties:
+        xirrPct: { type: number, description: Percent points; omitted when undefined }
+        includedCount: { type: integer }
+        excludedCount: { type: integer }
+        asOf: { type: string, format: date-time }
+        holdings:
+          type: array
+          items:
+            type: object
+            required: [holdingId, instrumentId]
+            properties:
+              holdingId: { type: string, format: uuid }
+              instrumentId: { type: string, format: uuid }
+              xirrPct: { type: number }
+    ValuationHistoryResponse:
+      type: object
+      required: [currency, interval, points]
+      properties:
+        currency: { type: string }
+        interval: { type: string, enum: [DAILY, WEEKLY, MONTHLY] }
+        points:
+          type: array
+          items:
+            type: object
+            required: [date, value, invested, pricedHoldingCount, unpricedHoldingCount]
+            properties:
+              date: { type: string, format: date }
+              value: { $ref: '#/components/schemas/Money' }
+              invested: { $ref: '#/components/schemas/Money' }
+              pricedHoldingCount: { type: integer }
+              unpricedHoldingCount: { type: integer }
+    RecordFxRateRequest:
+      type: object
+      required: [currency, inrPerUnit]
+      properties:
+        currency: { type: string, pattern: '^[A-Z]{3}$', description: Not INR }
+        rateDate: { type: string, format: date, description: Defaults to today; not in the future }
+        inrPerUnit: { type: string, description: Decimal string, at most 6 decimals, above zero }
+    FxRateResponse:
+      type: object
+      required: [currency, rateDate, inrPerUnit, source]
+      properties:
+        currency: { type: string }
+        rateDate: { type: string, format: date }
+        inrPerUnit: { type: string }
+        source: { type: string, enum: [AA, MANUAL, DERIVED, GMAIL] }
+    ConversionResponse:
+      type: object
+      required: [from, to, date]
+      properties:
+        from: { $ref: '#/components/schemas/Money' }
+        to: { $ref: '#/components/schemas/Money' }
+        date: { type: string, format: date }
+        rateDate: { type: string, format: date, description: Omitted when no rate was needed }
+    PriceFeedSyncResponse:
+      type: object
+      required: [pricesStored, fxRatesStored]
+      properties:
+        pricesStored: { type: integer }
+        fxRatesStored: { type: integer }
+
+    # ---- Goals
+    GoalType:
+      type: string
+      enum: [EMERGENCY_FUND, HOME, VEHICLE, EDUCATION, RETIREMENT, TRAVEL, WEDDING, OTHER]
+    GoalStatus:
+      type: string
+      enum: [ACTIVE, ARCHIVED]
+      description: Archived goals are ignored by the health score and accept no new contributions.
+
+    GoalProgress:
+      type: object
+      description: All figures are computed server-side (straight-line accrual from start date to target date).
+      required: [asOf, allocated, requiredToDate, remaining, percentComplete, progressRatio, daysRemaining, onTrack, achieved]
+      properties:
+        asOf: { type: string, format: date }
+        allocated: { $ref: '#/components/schemas/Money' }
+        requiredToDate: { $ref: '#/components/schemas/Money' }
+        remaining: { $ref: '#/components/schemas/Money' }
+        percentComplete: { type: number, minimum: 0, maximum: 100, description: Percent points. }
+        progressRatio: { type: number, minimum: 0, maximum: 1, description: Per-goal health-score input. }
+        daysRemaining: { type: integer, minimum: 0 }
+        onTrack: { type: boolean }
+        achieved: { type: boolean }
+
+    Goal:
+      type: object
+      required: [id, name, type, targetAmount, startDate, targetDate, weight, status, progress, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, maxLength: 80 }
+        type: { $ref: '#/components/schemas/GoalType' }
+        targetAmount: { $ref: '#/components/schemas/Money' }
+        startDate: { type: string, format: date }
+        targetDate: { type: string, format: date }
+        weight: { type: integer, minimum: 1, maximum: 10 }
+        status: { $ref: '#/components/schemas/GoalStatus' }
+        progress: { $ref: '#/components/schemas/GoalProgress' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    GoalPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required: [content]
+          properties:
+            content:
+              type: array
+              items: { $ref: '#/components/schemas/Goal' }
+
+    CreateGoalRequest:
+      type: object
+      required: [name, type, targetAmount, targetDate]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        type: { $ref: '#/components/schemas/GoalType' }
+        targetAmount: { $ref: '#/components/schemas/Money' }
+        startDate: { type: string, format: date, description: Defaults to today (Asia/Kolkata). }
+        targetDate: { type: string, format: date, description: Must be after today and after `startDate`. }
+        weight: { type: integer, minimum: 1, maximum: 10, default: 1 }
+
+    UpdateGoalRequest:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        type: { $ref: '#/components/schemas/GoalType' }
+        targetAmount: { $ref: '#/components/schemas/Money' }
+        targetDate: { type: string, format: date }
+        weight: { type: integer, minimum: 1, maximum: 10 }
+        status: { $ref: '#/components/schemas/GoalStatus' }
+
+    GoalContribution:
+      type: object
+      required: [id, goalId, amount, contributedOn, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        goalId: { type: string, format: uuid }
+        amount: { $ref: '#/components/schemas/Money' }
+        contributedOn: { type: string, format: date }
+        note: { type: string, maxLength: 200 }
+        createdAt: { type: string, format: date-time }
+
+    GoalContributionPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required: [content]
+          properties:
+            content:
+              type: array
+              items: { $ref: '#/components/schemas/GoalContribution' }
+
+    CreateGoalContributionRequest:
+      type: object
+      required: [amount]
+      properties:
+        amount: { $ref: '#/components/schemas/Money' }
+        contributedOn: { type: string, format: date, description: Not in the future. Defaults to today (Asia/Kolkata). }
+        note: { type: string, maxLength: 200 }
+
+    # ---- Dashboard
+    DashboardSummary:
+      type: object
+      required: [asOf]
+      properties:
+        asOf: { type: string, format: date-time }
+        netWorth: { $ref: '#/components/schemas/NetWorth' }
+        portfolio: { $ref: '#/components/schemas/PortfolioSummary' }
+        healthScore: { $ref: '#/components/schemas/HealthScore' }
+        goals:
+          type: object
+          required: [activeCount, upcoming]
+          properties:
+            activeCount: { type: integer, format: int64 }
+            upcoming:
+              type: array
+              description: Up to three active goals, soonest target date first.
+              items: { $ref: '#/components/schemas/Goal' }
+        income: { $ref: '#/components/schemas/IncomeSummary' }
+        spending: { $ref: '#/components/schemas/SpendingHabits' }
+        unavailable:
+          type: array
+          description: Sections left out because they failed to load. Absent when all loaded.
+          items: { type: string, enum: [netWorth, portfolio, healthScore, goals, income, spending] }

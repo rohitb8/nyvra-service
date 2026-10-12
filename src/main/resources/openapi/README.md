@@ -11,3 +11,9 @@ curl -s http://localhost:8080/v3/api-docs.yaml -o src/main/resources/openapi/nyv
 
 Commit the exported file when the contract changes so the frontend can regenerate without a
 running backend. Breaking changes go to `/api/v2` — never mutate v1 in place.
+
+## Per-module fragments
+
+A change that must not edit the shared contract while other PRs are open may add a temporary
+`fragments/<module>.yaml` (paths + components, refs to shared components as `nyvra-api-v1.yaml#/...`).
+Fold it into `nyvra-api-v1.yaml` and delete it once the parallel PRs have merged. No fragments are pending.

@@ -36,7 +36,7 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 /**
  * REST endpoints for goals and their contributions under {@code /api/v1/goals}, described in
- * {@code openapi/fragments/goals.yaml}. Thin by design: binding and validation happen here, every rule lives in
+ * {@code openapi/nyvra-api-v1.yaml}. Thin by design: binding and validation happen here, every rule lives in
  * {@link GoalService}.
  */
 @RestController
