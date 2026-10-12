@@ -44,8 +44,9 @@ services:
       timeout: 5s
       retries: 10
 
+  # MinIO is pulled from Quay and pinned: the Docker Hub minio/* images are no longer published.
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: nyvra
@@ -62,7 +63,7 @@ services:
       retries: 10
 
   minio-setup:
-    image: minio/mc:latest
+    image: quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z
     depends_on:
       minio:
         condition: service_healthy

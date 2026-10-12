@@ -1,9 +1,13 @@
 package com.rohit.nyvra.portfolio;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 
 import com.rohit.nyvra.common.persistence.RecordSource;
 import com.rohit.nyvra.ingestion.HoldingsIngested;
@@ -31,9 +35,10 @@ import org.springframework.transaction.support.TransactionTemplate;
  * is never touched. The event is handled after the publisher commits, in a transaction of its own, and a
  * failure is logged without touching the fetch.
  *
- * <p>Limits: a holding that disappears from a later payload is not closed (a payload cannot be tied to an
- * account the portfolio knows), and the same instrument held in two folios is one position that follows
- * whichever payload arrived last.
+ * <p>Each position remembers the folio or demat account ({@code fipId|accountRef}) that reported it. The same
+ * instrument in two folios is therefore two positions, and a position whose holding no longer appears in a
+ * later payload of its own account is closed. Positions created before the account was recorded are adopted
+ * by the first payload that reports their instrument.
  */
 @Component
 public class IngestedHoldingsWriter {
@@ -103,6 +108,8 @@ public class IngestedHoldingsWriter {
         }
         Instant now = Instant.now();
         Instant quoteTime = LocalDate.now(ZoneOffset.UTC).atStartOfDay().toInstant(ZoneOffset.UTC);
+        String ref = event.fipId() + "|" + event.accountRef();
+        Set<UUID> reported = new HashSet<>();
         int changed = 0;
         for (IngestedHolding h : event.holdings()) {
             if (h.isin() == null || h.isin().isBlank() || h.units() == null || h.units().signum() <= 0) {
@@ -110,37 +117,68 @@ public class IngestedHoldingsWriter {
             }
             Instrument instrument = instruments.findByIsin(h.isin())
                 .orElseGet(() -> instruments.save(new Instrument(h.isin(), null, h.name(), assetClass, INR, "IN")));
+            reported.add(instrument.getId());
             recordQuote(instrument, h, quoteTime);
-            if (applyPosition(event, instrument, h, now)) {
+            if (applyPosition(event, instrument, h, now, ref)) {
                 changed++;
             }
         }
-        return changed;
+        return changed + closeVanished(event, assetClass, ref, reported, now);
     }
 
     /**
-     * Sets the user's AA position in the instrument to the reported units.
+     * Closes the user's open AA positions from this account that the payload no longer reports.
+     *
+     * @param event      the ingested holdings, for the owner
+     * @param assetClass the asset class the payload covers; other classes are not touched
+     * @param ref        the reporting account
+     * @param reported   ids of the instruments the payload reported with units
+     * @param now        the closing time
+     * @return how many positions were closed
+     */
+    private int closeVanished(HoldingsIngested event, AssetClass assetClass, String ref, Set<UUID> reported,
+                              Instant now) {
+        int closed = 0;
+        for (PortfolioHolding p : holdings.findByUserIdAndClosedAtIsNull(event.userId())) {
+            if (p.getSource() == RecordSource.AA && ref.equals(p.getSourceRef()) && p.getAssetClass() == assetClass
+                && !reported.contains(p.getInstrumentId())) {
+                p.adjust(BigDecimal.ZERO, null, now);
+                holdings.save(p);
+                closed++;
+            }
+        }
+        return closed;
+    }
+
+    /**
+     * Sets the user's AA position in the instrument, for the reporting account, to the reported units.
      *
      * @param event      the ingested holdings, for the owner
      * @param instrument the instrument
      * @param h          the reported holding
      * @param now        the time to stamp a new position with
+     * @param ref        the reporting account, as {@code fipId|accountRef}
      * @return {@code true} when a position was created, reopened or its units changed
      */
-    private boolean applyPosition(HoldingsIngested event, Instrument instrument, IngestedHolding h, Instant now) {
+    private boolean applyPosition(HoldingsIngested event, Instrument instrument, IngestedHolding h, Instant now,
+                                   String ref) {
         List<PortfolioHolding> existing = holdings.findByUserIdAndInstrumentId(event.userId(), instrument.getId());
         if (existing.stream().anyMatch(p -> p.getSource() != RecordSource.AA && p.isOpen())) {
             return false;
         }
-        PortfolioHolding position = existing.stream().filter(p -> p.getSource() == RecordSource.AA).findFirst()
-            .orElse(null);
+        PortfolioHolding position = existing.stream()
+            .filter(p -> p.getSource() == RecordSource.AA && ref.equals(p.getSourceRef())).findFirst()
+            .orElseGet(() -> existing.stream()
+                .filter(p -> p.getSource() == RecordSource.AA && p.getSourceRef() == null).findFirst().orElse(null));
         if (position == null) {
-            holdings.save(new PortfolioHolding(event.userId(), instrument, h.units(), null, RecordSource.AA, now));
+            holdings.save(new PortfolioHolding(event.userId(), instrument, h.units(), null, RecordSource.AA, now, ref));
             return true;
         }
-        if (position.isOpen() && position.getQuantity().compareTo(h.units()) == 0) {
+        if (ref.equals(position.getSourceRef()) && position.isOpen()
+            && position.getQuantity().compareTo(h.units()) == 0) {
             return false;
         }
+        position.claimFor(ref);
         position.adjust(h.units(), null, now);
         holdings.save(position);
         return true;
