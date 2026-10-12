@@ -169,13 +169,13 @@ Enum payload_type {
 }
 
 //// ==========================================================================
-//// User  — V1 applied. Email encryption retrofit (two-step) proposed, not applied.
+//// User  — V1 applied. Email encryption retrofit (two-step) complete (V5 expand, V22 contract).
 //// ==========================================================================
 
 Table user_profile {
   id uuid [pk]
   keycloak_subject text [not null, unique, note: 'from OIDC sub claim']
-  email bytea [note: '🔒 proposed two-step retrofit — currently plaintext `text`, see decisions.md']
+  email bytea [note: '🔒 encrypted — column `email_encrypted`; plaintext `email` dropped in V22, see decisions.md']
   email_hash text [unique, note: 'blind index (HMAC-SHA256) — proposed alongside email encryption']
   display_name text
   date_of_birth date [note: 'proposed addition — needed for FINANCIAL_RULES age-based allocation targets']
@@ -184,7 +184,7 @@ Table user_profile {
   created_at timestamptz [not null, default: `now()`]
   updated_at timestamptz [not null, default: `now()`]
 
-  Note: 'V1 applied. V5 (expand) added `email_encrypted`/`email_hash`; plaintext `email` is dropped in a later contract migration. `date_of_birth`/`dpdp_consent_at` are still proposed.'
+  Note: 'V1 applied. V5 (expand) added `email_encrypted`/`email_hash`; V22 (contract) dropped plaintext `email`. `date_of_birth`/`dpdp_consent_at` are still proposed.'
 }
 
 Table user_preferences {
