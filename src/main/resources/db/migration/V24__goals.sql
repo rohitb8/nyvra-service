@@ -12,7 +12,7 @@ CREATE TABLE goal (
     currency      CHAR(3)       NOT NULL DEFAULT 'INR',
     start_date    DATE          NOT NULL,
     target_date   DATE          NOT NULL,
-    weight        SMALLINT      NOT NULL DEFAULT 1,
+    weight        INTEGER       NOT NULL DEFAULT 1,
     status        TEXT          NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'ARCHIVED')),
     created_at    TIMESTAMPTZ   NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ   NOT NULL DEFAULT now(),
