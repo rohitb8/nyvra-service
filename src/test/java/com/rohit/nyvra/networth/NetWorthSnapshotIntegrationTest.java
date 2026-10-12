@@ -19,6 +19,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
@@ -51,6 +52,17 @@ class NetWorthSnapshotIntegrationTest extends AbstractIntegrationTest {
      */
     private static RequestPostProcessor as(String subject) {
         return jwt().jwt(jwt -> jwt.subject(subject).claim("email", subject + "@nyvra.local"));
+    }
+
+    /**
+     * Authenticates a request as the given subject with the {@code ADMIN} role, which setting prices requires.
+     *
+     * @param subject the token {@code sub}
+     * @return a request post-processor attaching that admin JWT
+     */
+    private static RequestPostProcessor admin(String subject) {
+        return jwt().jwt(jwt -> jwt.subject(subject).claim("email", subject + "@nyvra.local"))
+            .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
     }
 
     /** @return a unique subject, so each test works with its own user */
@@ -117,15 +129,15 @@ class NetWorthSnapshotIntegrationTest extends AbstractIntegrationTest {
     }
 
     /**
-     * Records a manual price for an instrument.
+     * Records a manual price for an instrument (admin-only).
      *
-     * @param subject      the caller
+     * @param subject      the caller, acting as an admin
      * @param instrumentId the instrument
      * @param price        the price
      * @throws Exception on request failure
      */
     private void quote(String subject, String instrumentId, String price) throws Exception {
-        mockMvc.perform(post("/api/v1/portfolio/instruments/" + instrumentId + "/quotes").with(as(subject))
+        mockMvc.perform(post("/api/v1/portfolio/instruments/" + instrumentId + "/quotes").with(admin(subject))
                 .contentType(MediaType.APPLICATION_JSON).content("{\"price\":\"" + price + "\"}"))
             .andExpect(status().isCreated());
     }
