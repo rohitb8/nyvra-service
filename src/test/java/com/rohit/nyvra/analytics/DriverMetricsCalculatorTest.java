@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.math.BigDecimal;
 import java.util.List;
 
+import com.rohit.nyvra.user.RiskBand;
+
 import org.junit.jupiter.api.Test;
 
 /**
@@ -56,6 +58,27 @@ class DriverMetricsCalculatorTest {
             base.burnMonths(), base.burnTotal(), base.liquidKnown(), base.liquidAssets(), base.variableIncome(),
             base.hasAccount(), base.liabilityAccountCount(), base.cardOutstanding(), base.cardLimit(), d(value),
             holdings, d(equity), stocks, base.goalRatios(), base.maxAccountStaleDays(), base.historyDays());
+    }
+
+    /**
+     * Copies facts with different portfolio composition and preferences.
+     *
+     * @param base         the facts to copy
+     * @param portfolio    portfolio value
+     * @param equity       direct-equity value
+     * @param unclassified value of mutual funds and NPS
+     * @param band         the risk band
+     * @param ownTarget    the user's own emergency target, or {@code null}
+     * @return the changed facts
+     */
+    private static DriverFacts withPreferences(DriverFacts base, String portfolio, String equity,
+                                               String unclassified, RiskBand band, String ownTarget) {
+        return new DriverFacts(base.windowIncomeNet(), base.incomeEntryCount(), base.monthsWithSpend(),
+            base.windowSpend(), base.windowEssential(), base.windowDiscretionary(), base.windowDebtRepayment(),
+            base.burnMonths(), base.burnTotal(), base.liquidKnown(), base.liquidAssets(), base.variableIncome(),
+            base.hasAccount(), base.liabilityAccountCount(), base.cardOutstanding(), base.cardLimit(),
+            d(portfolio), 5, d(equity), List.of(), base.goalRatios(), base.maxAccountStaleDays(),
+            base.historyDays(), d(unclassified), band, ownTarget == null ? null : d(ownTarget));
     }
 
     /** A user who passes the cash-flow and emergency gates gets ratios, months of cover and no debt. */
@@ -165,11 +188,11 @@ class DriverMetricsCalculatorTest {
     /** A stock over 20% of equity costs the larger penalty, one over 10% the smaller, and the total is capped at 25. */
     @Test
     void singleStockConcentrationIsPenalisedAndCapped() {
-        DriverFacts balanced = withPortfolio(healthy(), "600000", 5, "500000",
+        DriverFacts balanced = withPortfolio(healthy(), "770000", 5, "500000",
             List.of(d("50000"), d("50000"), d("50000"), d("50000"), d("300000")));
-        DriverFacts mixed = withPortfolio(healthy(), "600000", 5, "500000",
+        DriverFacts mixed = withPortfolio(healthy(), "770000", 5, "500000",
             List.of(d("60000"), d("40000"), d("40000")));
-        DriverFacts overweight = withPortfolio(healthy(), "600000", 5, "400000",
+        DriverFacts overweight = withPortfolio(healthy(), "615000", 5, "400000",
             List.of(d("100000"), d("100000"), d("100000"), d("100000")));
 
         assertThat(DriverMetricsCalculator.calculate(balanced, INPUTS, RULES).diversificationPenalty())
@@ -179,7 +202,7 @@ class DriverMetricsCalculatorTest {
         assertThat(DriverMetricsCalculator.calculate(overweight, INPUTS, RULES).diversificationPenalty())
             .isEqualByComparingTo("25");
         assertThat(DriverMetricsCalculator.calculate(
-            withPortfolio(healthy(), "600000", 5, "1000000", List.of(d("100000"), d("100000"), d("100000"))),
+            withPortfolio(healthy(), "1540000", 5, "1000000", List.of(d("100000"), d("100000"), d("100000"))),
             INPUTS, RULES).diversificationPenalty()).isEqualByComparingTo("0");
     }
 
@@ -198,5 +221,83 @@ class DriverMetricsCalculatorTest {
         assertThat(DriverMetricsCalculator.calculate(withGoals, INPUTS, RULES).goalProgressScore())
             .isEqualByComparingTo("62.5");
         assertThat(DriverMetricsCalculator.calculate(f, INPUTS, RULES).goalProgressScore()).isNull();
+    }
+
+    /** The risk band shifts the equity target: the same 60% equity is on target for conservative, off for aggressive. */
+    @Test
+    void allocationDriftIsMeasuredAgainstTheRiskBandTarget() {
+        DriverFacts base = healthy();
+        // Assumed age 35 gives a base of 65; conservative 50, balanced 65, aggressive 75.
+        assertThat(penalty(withPreferences(base, "1000000", "600000", "0", RiskBand.BALANCED, null)))
+            .isEqualByComparingTo("0");
+        assertThat(penalty(withPreferences(base, "1000000", "500000", "0", RiskBand.CONSERVATIVE, null)))
+            .isEqualByComparingTo("0");
+        assertThat(penalty(withPreferences(base, "1000000", "600000", "0", RiskBand.CONSERVATIVE, null)))
+            .isEqualByComparingTo("10");
+        assertThat(penalty(withPreferences(base, "1000000", "600000", "0", RiskBand.AGGRESSIVE, null)))
+            .isEqualByComparingTo("25");
+    }
+
+    /** Drift beyond the hard band costs the larger penalty, and the band edge itself is not a breach. */
+    @Test
+    void hardDriftReplacesTheSoftPenaltyAndTheBandEdgeIsTolerated() {
+        DriverFacts base = healthy();
+
+        assertThat(penalty(withPreferences(base, "1000000", "400000", "0", RiskBand.BALANCED, null)))
+            .isEqualByComparingTo("25");
+        assertThat(penalty(withPreferences(base, "1000000", "700000", "0", RiskBand.BALANCED, null)))
+            .isEqualByComparingTo("0");
+        assertThat(penalty(withPreferences(base, "1000000", "550000", "0", RiskBand.BALANCED, null)))
+            .isEqualByComparingTo("10");
+    }
+
+    /** Drift is not judged when too much of the portfolio is funds or NPS whose equity share is unknown. */
+    @Test
+    void driftIsSkippedWhenTheEquityShareIsUnknown() {
+        DriverFacts base = healthy();
+
+        assertThat(penalty(withPreferences(base, "1000000", "100000", "800000", RiskBand.BALANCED, null)))
+            .isEqualByComparingTo("0");
+        assertThat(penalty(withPreferences(base, "1000000", "560000", "90000", RiskBand.BALANCED, null)))
+            .isEqualByComparingTo("10");
+    }
+
+    /** The user's own emergency target wins over the default and the variable-income target. */
+    @Test
+    void ownEmergencyTargetOverridesTheDefaults() {
+        DriverFacts base = healthy();
+
+        assertThat(DriverMetricsCalculator.calculate(
+            withPreferences(base, "0", "0", "0", RiskBand.BALANCED, "4"), INPUTS, RULES).emergencyMonthsTarget())
+            .isEqualByComparingTo("4");
+        DriverFacts variable = new DriverFacts(base.windowIncomeNet(), base.incomeEntryCount(),
+            base.monthsWithSpend(), base.windowSpend(), base.windowEssential(), base.windowDiscretionary(),
+            base.windowDebtRepayment(), base.burnMonths(), base.burnTotal(), base.liquidKnown(),
+            base.liquidAssets(), true, base.hasAccount(), base.liabilityAccountCount(), base.cardOutstanding(),
+            base.cardLimit(), base.portfolioValue(), base.holdingCount(), base.equityValue(), base.stockValues(),
+            base.goalRatios(), base.maxAccountStaleDays(), base.historyDays(), BigDecimal.ZERO,
+            RiskBand.BALANCED, d("12"));
+        assertThat(DriverMetricsCalculator.calculate(variable, INPUTS, RULES).emergencyMonthsTarget())
+            .isEqualByComparingTo("12");
+    }
+
+    /** A target at or below the minimum months would flatten the ramp, so it is ignored. */
+    @Test
+    void emergencyTargetAtOrBelowTheMinimumIsIgnored() {
+        DriverFacts base = healthy();
+
+        assertThat(DriverMetricsCalculator.calculate(
+            withPreferences(base, "0", "0", "0", RiskBand.BALANCED, "3"), INPUTS, RULES).emergencyMonthsTarget())
+            .isNull();
+    }
+
+    /**
+     * The diversification penalty of the given facts.
+     *
+     * @param facts the facts, which must pass the corpus and holdings gates
+     * @return the total penalty points
+     */
+    private static BigDecimal penalty(DriverFacts facts) {
+        return DriverMetricsCalculator.calculate(facts, INPUTS, RULES).diversificationPenalty();
     }
 }
