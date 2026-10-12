@@ -105,6 +105,15 @@ public class NetWorthSnapshotStore {
     }
 
     /**
+     * Lists every user, for the daily snapshot job.
+     *
+     * @return all user ids
+     */
+    public List<UUID> allUserIds() {
+        return jdbc.queryForList("SELECT id FROM user_profile ORDER BY created_at", UUID.class);
+    }
+
+    /**
      * Builds the JSON form of a source contribution.
      *
      * @param s the contribution
