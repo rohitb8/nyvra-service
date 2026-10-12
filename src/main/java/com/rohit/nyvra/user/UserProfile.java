@@ -15,7 +15,7 @@ import com.rohit.nyvra.common.persistence.AbstractEntity;
  *
  * <p>{@code email} is a field-encrypted (🔒) column ({@code email_encrypted}) with a blind-index
  * {@code email_hash} for lookup ({@code database/decisions.md} §1). No plaintext email column exists
- * any more (dropped in V22).
+ * any more (dropped in V28).
  */
 @Entity
 @Table(name = "user_profile")
