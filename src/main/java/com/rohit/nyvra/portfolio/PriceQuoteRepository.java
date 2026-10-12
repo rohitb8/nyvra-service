@@ -24,4 +24,32 @@ public interface PriceQuoteRepository extends JpaRepository<PriceQuote, PriceQuo
         ORDER BY instrument_id, as_of DESC
         """, nativeQuery = true)
     List<PriceQuote> findLatestByInstrumentIds(@Param("instrumentIds") Collection<java.util.UUID> instrumentIds);
+
+    /**
+     * Loads, per instrument, the latest quote strictly before a moment: the price in force when a window starts.
+     *
+     * @param instrumentIds the instruments to price, not empty
+     * @param before        exclusive upper bound on {@code as_of}
+     * @return at most one quote per instrument
+     */
+    @Query(value = """
+        SELECT DISTINCT ON (instrument_id) instrument_id, as_of, price, source
+        FROM price_quote
+        WHERE instrument_id IN (:instrumentIds) AND as_of < :before
+        ORDER BY instrument_id, as_of DESC
+        """, nativeQuery = true)
+    List<PriceQuote> findLatestBefore(@Param("instrumentIds") Collection<java.util.UUID> instrumentIds,
+                                      @Param("before") java.time.Instant before);
+
+    /**
+     * Loads every quote of the given instruments inside a window, oldest first.
+     *
+     * @param instrumentIds the instruments to price
+     * @param from          inclusive lower bound on {@code asOf}
+     * @param to            inclusive upper bound on {@code asOf}
+     * @return the quotes in the window
+     */
+    List<PriceQuote> findByInstrumentIdInAndAsOfBetweenOrderByAsOfAsc(Collection<java.util.UUID> instrumentIds,
+                                                                        java.time.Instant from,
+                                                                        java.time.Instant to);
 }

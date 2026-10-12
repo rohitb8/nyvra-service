@@ -23,8 +23,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor;
 
 /**
  * End-to-end tests of the portfolio API against a real PostgreSQL (Testcontainers) with a stub JWT decoder:
@@ -57,8 +58,18 @@ class PortfolioControllerIntegrationTest extends AbstractIntegrationTest {
      * @param subject the token {@code sub}
      * @return a request post-processor attaching that JWT
      */
-    private static RequestPostProcessor as(String subject) {
+    private static JwtRequestPostProcessor as(String subject) {
         return jwt().jwt(jwt -> jwt.subject(subject).claim("email", subject + "@nyvra.local"));
+    }
+
+    /**
+     * Authenticates a request as the given subject holding the ADMIN realm role, as price writes require.
+     *
+     * @param subject the token {@code sub}
+     * @return a request post-processor attaching that JWT and role
+     */
+    private static JwtRequestPostProcessor admin(String subject) {
+        return as(subject).authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
     }
 
     /** @return a unique subject, so each test works with its own user */
@@ -96,7 +107,7 @@ class PortfolioControllerIntegrationTest extends AbstractIntegrationTest {
      * @throws Exception on request failure
      */
     private void quote(String subject, String instrumentId, String price) throws Exception {
-        mockMvc.perform(post("/api/v1/portfolio/instruments/" + instrumentId + "/quotes").with(as(subject))
+        mockMvc.perform(post("/api/v1/portfolio/instruments/" + instrumentId + "/quotes").with(admin(subject))
                 .contentType(MediaType.APPLICATION_JSON).content("{\"price\":\"" + price + "\"}"))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.source", equalTo("MANUAL")));
@@ -296,17 +307,27 @@ class PortfolioControllerIntegrationTest extends AbstractIntegrationTest {
             .andExpect(status().isConflict());
     }
 
+    /** Recording a price needs the ADMIN role: an ordinary user gets 403 and no quote is stored. */
+    @Test
+    void refusesQuotesFromNonAdmins() throws Exception {
+        String subject = newSubject();
+        String instrument = createInstrument(subject, "ADM" + System.nanoTime(), "EQUITY");
+        mockMvc.perform(post("/api/v1/portfolio/instruments/" + instrument + "/quotes").with(as(subject))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"price\":\"10\"}"))
+            .andExpect(status().isForbidden());
+    }
+
     /** A quote dated in the future is a 422 and a malformed price is a 400. */
     @Test
     void validatesQuotes() throws Exception {
         String subject = newSubject();
         String instrument = createInstrument(subject, "QTE" + System.nanoTime(), "EQUITY");
-        mockMvc.perform(post("/api/v1/portfolio/instruments/" + instrument + "/quotes").with(as(subject))
+        mockMvc.perform(post("/api/v1/portfolio/instruments/" + instrument + "/quotes").with(admin(subject))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"price\":\"10\",\"asOf\":\"" + Instant.now().plusSeconds(3600) + "\"}"))
             .andExpect(status().isUnprocessableEntity())
             .andExpect(jsonPath("$.code", equalTo("QUOTE_IN_FUTURE")));
-        mockMvc.perform(post("/api/v1/portfolio/instruments/" + instrument + "/quotes").with(as(subject))
+        mockMvc.perform(post("/api/v1/portfolio/instruments/" + instrument + "/quotes").with(admin(subject))
                 .contentType(MediaType.APPLICATION_JSON).content("{\"price\":\"-1\"}"))
             .andExpect(status().isBadRequest());
     }
