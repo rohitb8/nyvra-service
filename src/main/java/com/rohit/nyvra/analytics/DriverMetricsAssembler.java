@@ -43,6 +43,7 @@ import com.rohit.nyvra.portfolio.PortfolioHoldingRepository;
 import com.rohit.nyvra.portfolio.PortfolioValuation;
 import com.rohit.nyvra.portfolio.PriceQuote;
 import com.rohit.nyvra.portfolio.PriceQuoteRepository;
+import com.rohit.nyvra.user.UserPreferencesReader;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -81,6 +82,8 @@ public class DriverMetricsAssembler {
     private final PortfolioValueSource portfolioValue;
     /** Goal progress. */
     private final GoalProgressSource goals;
+    /** The user's risk band and emergency-fund target. */
+    private final UserPreferencesReader preferences;
     /** Window and gate parameters. */
     private final HealthScoreInputRules inputs;
     /** Rule parameters. */
@@ -98,6 +101,7 @@ public class DriverMetricsAssembler {
      * @param quotes         price quote repository
      * @param portfolioValue the portfolio valuation seam
      * @param goals          the goal progress seam
+     * @param preferences    the user preferences reader
      * @param inputs         window and gate parameters
      * @param rules          financial rule parameters
      */
@@ -105,7 +109,8 @@ public class DriverMetricsAssembler {
                                   IncomeSourceRepository incomeSources, FinancialAccountRepository accounts,
                                   CardDetailRepository cards, PortfolioHoldingRepository holdings,
                                   PriceQuoteRepository quotes, PortfolioValueSource portfolioValue,
-                                  GoalProgressSource goals, HealthScoreInputRules inputs, FinancialRules rules) {
+                                  GoalProgressSource goals, UserPreferencesReader preferences,
+                                  HealthScoreInputRules inputs, FinancialRules rules) {
         this.expenses = expenses;
         this.incomeEntries = incomeEntries;
         this.incomeSources = incomeSources;
@@ -115,6 +120,7 @@ public class DriverMetricsAssembler {
         this.quotes = quotes;
         this.portfolioValue = portfolioValue;
         this.goals = goals;
+        this.preferences = preferences;
         this.inputs = inputs;
         this.rules = rules;
     }
@@ -239,13 +245,17 @@ public class DriverMetricsAssembler {
 
         List<PortfolioHolding> open2 = holdings.findByUserIdAndClosedAtIsNull(userId);
         BigDecimal equity = BigDecimal.ZERO;
+        BigDecimal unclassified = BigDecimal.ZERO;
         List<BigDecimal> stocks = new ArrayList<>();
         Map<UUID, PriceQuote> latest = open2.isEmpty() ? Map.of() : quotes
             .findLatestByInstrumentIds(open2.stream().map(PortfolioHolding::getInstrumentId).distinct().toList())
             .stream().collect(Collectors.toMap(PriceQuote::getInstrumentId, Function.identity(), (a, b) -> a));
         for (PortfolioHolding h : open2) {
-            if (!Money.INR.equals(h.getCurrency())
-                || (h.getAssetClass() != AssetClass.EQUITY && h.getAssetClass() != AssetClass.FOREIGN_EQUITY)) {
+            boolean directEquity = h.getAssetClass() == AssetClass.EQUITY
+                || h.getAssetClass() == AssetClass.FOREIGN_EQUITY;
+            // Funds and NPS mix equity and debt in unknown proportions, so they can only be set aside.
+            boolean unknownMix = h.getAssetClass() == AssetClass.MUTUAL_FUND || h.getAssetClass() == AssetClass.NPS;
+            if (!Money.INR.equals(h.getCurrency()) || (!directEquity && !unknownMix)) {
                 continue;
             }
             PriceQuote quote = latest.get(h.getInstrumentId());
@@ -254,9 +264,11 @@ public class DriverMetricsAssembler {
             if (value == null) {
                 value = PortfolioValuation.invested(h.getQuantity(), h.getAvgCost(), h.getCurrency());
             }
-            if (value != null) {
+            if (value != null && directEquity) {
                 equity = equity.add(value.amount());
                 stocks.add(value.amount());
+            } else if (value != null) {
+                unclassified = unclassified.add(value.amount());
             }
         }
 
@@ -265,10 +277,12 @@ public class DriverMetricsAssembler {
             goalRatios.add(new DriverFacts.GoalRatio(g.progressRatio(), g.weight()));
         }
 
+        UserPreferencesReader.ScorePreferences prefs = preferences.scorePreferences(userId);
         int historyDays = earliest == null ? 0 : (int) ChronoUnit.DAYS.between(earliest, today);
         return new DriverFacts(incomeNet, incomeEntryCount, spendMonths.size(), spend, essential, discretionary,
             debtRepayment, burnMonths.size(), burn, liquidKnown, liquid, variable, !open.isEmpty(), liabilities,
             cardOutstanding, cardLimit, portfolioValue.currentValue(userId).amount(), open2.size(), equity, stocks,
-            goalRatios, maxStale, historyDays);
+            goalRatios, maxStale, historyDays, unclassified, prefs.riskBand(),
+            prefs.emergencyFundMonthsTarget());
     }
 }
