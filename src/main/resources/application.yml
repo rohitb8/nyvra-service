@@ -87,6 +87,61 @@ nyvra:
     # Used only to make Swagger UI "Authorize" work; not security-critical.
     auth-url: ${NYVRA_OIDC_AUTH_URL:http://localhost:8081/realms/nyvra/protocol/openid-connect/auth}
     token-url: ${NYVRA_OIDC_TOKEN_URL:http://localhost:8081/realms/nyvra/protocol/openid-connect/token}
+  # FINANCIAL_RULES.md §8 / HEALTH_SCORE_SPEC.md parameters. Changing a value that alters user-visible
+  # scores requires bumping ruleset-version.
+  financial-rules:
+    ruleset-version: "2026.1"
+    score-spec-version: "2026.1"
+    min-evaluated-sub-scores: 3
+    weights:
+      savings: 0.25
+      spending-control: 0.15
+      emergency-fund: 0.20
+      debt: 0.20
+      diversification: 0.15
+      goal-progress: 0.05
+    bands: { fair-min: 40, good-min: 60, excellent-min: 80 }
+    caps:
+      emergency-fund-below-min: 45
+      high-interest-debt: 55
+      fixed-obligations-over-ceiling: 55
+      negative-savings: 40
+    savings: { target-rate: 0.20, stretch-rate: 0.30, min-acceptable: 0.10 }
+    spending:
+      essential-full-score-ratio: 0.50
+      essential-zero-score-ratio: 0.75
+      discretionary-full-score-ratio: 0.30
+      discretionary-zero-score-ratio: 0.55
+      essential-target-ratio: 0.50
+      discretionary-target-ratio: 0.30
+      essential-critical-ratio: 0.70
+      lifestyle-creep-penalty: 10
+    emergency: { months-target: 6, months-min: 3 }
+    debt:
+      dti-target: 0.36
+      dti-ceiling: 0.43
+      dti-above-target-penalty: 15
+      dti-above-ceiling-penalty: 35
+      cc-util-target: 0.30
+      cc-util-high: 0.50
+      cc-util-critical: 0.80
+      cc-util-above-target-penalty: 10
+      cc-util-above-high-penalty: 25
+      cc-util-above-critical-penalty: 40
+      high-interest-penalty: 30
+      revolving-balance-penalty: 15
+    penalty-status: { warn-at: 20, critical-at: 45 }
+    confidence:
+      evaluated-weight-share: 0.4
+      data-freshness: 0.4
+      history-depth: 0.2
+      fresh-within-days: 7
+      stale-after-days: 45
+      stale-factor: 0.3
+      history-min-days: 30
+      history-full-days: 180
+      medium-from: 0.5
+      high-above: 0.8
   jobs:
     enabled: true
   partitions:
