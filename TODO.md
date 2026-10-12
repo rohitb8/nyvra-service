@@ -159,7 +159,7 @@ Items below tick once the draft is signed off.
 - [x] `IncomeController` — sources CRUD, entries CRUD (`/api/v1/income`; `Idempotency-Key` not yet honoured — needs Redis). Still open: `POST /income/entries/{id}/payslip` (multipart → MinIO), `GET /income/summary`
 - [x] `ExpenseController` — cursor-paged list (month/from-to, category, necessity, origin, merchant search), create manual, get, patch, delete manual, split / unsplit (`/api/v1/expenses`); `expenseId` now on the transaction response. `Idempotency-Key` not yet honoured
 - [ ] Categories CRUD, categorisation-rules CRUD, `GET /spending/habits?month=`
-- [ ] `PortfolioController` — holdings list/get, manual holding CRUD, `GET /portfolio/allocation`, `GET /portfolio/xirr`
+- [~] `PortfolioController` — done: instruments search/create, manual quotes, holdings list/get/create/update/delete, `GET /portfolio/summary` (totals + allocation). Left: `GET /portfolio/xirr`, drift vs targets, valuation history
 - [ ] `NetWorthController` — current, `GET /net-worth/history?from=&to=&granularity=`, manual asset/liability CRUD
 - [ ] `AnalyticsController` — `dashboard-summary`, `trends`, `insights` (list, `POST {id}/dismiss`), `health-score` (current, history)
 - [ ] `UserController` — `me` (done), update profile, preferences, `GET /users/me/consents`, `POST /users/me/data-export`, `POST /users/me/deletion-request`
