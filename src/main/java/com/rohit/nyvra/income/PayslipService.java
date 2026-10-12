@@ -16,6 +16,7 @@ import com.rohit.nyvra.income.dto.PayslipResponse;
 import com.rohit.nyvra.user.CurrentUserService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,7 +25,8 @@ import org.springframework.web.multipart.MultipartFile;
 /**
  * Payslip upload and lookup for the caller's income entries. A file is checked (size, declared type and magic
  * bytes), stored through {@link PayslipStorage}, and recorded as {@code PENDING}; a new upload replaces the
- * entry's previous payslip. No parser exists yet, so a payslip stays {@code PENDING} until one is added.
+ * entry's previous payslip. Once the upload commits, {@link PayslipParsingService} parses the file in the
+ * background and moves the payslip to {@code PARSED} or {@code FAILED}.
  */
 @Service
 public class PayslipService {
@@ -54,6 +56,8 @@ public class PayslipService {
     private final CurrentUserService currentUser;
     /** Decodes the stored parsed-fields JSON. */
     private final ObjectMapper objectMapper;
+    /** Announces new uploads so they get parsed after commit. */
+    private final ApplicationEventPublisher events;
 
     /**
      * Creates the service.
@@ -63,14 +67,17 @@ public class PayslipService {
      * @param storage      the file store
      * @param currentUser  the signed-in user resolver
      * @param objectMapper the JSON mapper
+     * @param events       publishes {@link PayslipUploaded} for each new upload
      */
     public PayslipService(IncomeEntryRepository entries, PayslipDocumentRepository payslips,
-                          PayslipStorage storage, CurrentUserService currentUser, ObjectMapper objectMapper) {
+                          PayslipStorage storage, CurrentUserService currentUser, ObjectMapper objectMapper,
+                          ApplicationEventPublisher events) {
         this.entries = entries;
         this.payslips = payslips;
         this.storage = storage;
         this.currentUser = currentUser;
         this.objectMapper = objectMapper;
+        this.events = events;
     }
 
     /**
@@ -78,7 +85,7 @@ public class PayslipService {
      *
      * @param entryId the entry
      * @param file    the uploaded file
-     * @return the new payslip, {@code PENDING} parsing
+     * @return the new payslip, {@code PENDING} parsing; the parser runs after the transaction commits
      * @throws ResourceNotFoundException if the entry does not exist or belongs to someone else
      * @throws BadRequestException       if the file is empty
      * @throws PayslipUploadException    413 if over 5 MB, 415 if not a PDF, PNG or JPEG
@@ -115,6 +122,7 @@ public class PayslipService {
             throw e;
         }
         previous.forEach(old -> discard(old.getObjectKey()));
+        events.publishEvent(new PayslipUploaded(saved.getId()));
         return toResponse(saved);
     }
 

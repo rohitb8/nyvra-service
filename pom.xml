@@ -110,6 +110,18 @@
             <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>
 
+        <!-- Payslip storage (S3 / MinIO) and PDF text extraction for the payslip parser -->
+        <dependency>
+            <groupId>io.minio</groupId>
+            <artifactId>minio</artifactId>
+            <version>8.5.12</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>3.0.3</version>
+        </dependency>
+
         <!-- Modular monolith -->
         <dependency>
             <groupId>org.springframework.modulith</groupId>

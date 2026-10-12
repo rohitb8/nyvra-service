@@ -87,6 +87,16 @@ nyvra:
     # Used only to make Swagger UI "Authorize" work; not security-critical.
     auth-url: ${NYVRA_OIDC_AUTH_URL:http://localhost:8081/realms/nyvra/protocol/openid-connect/auth}
     token-url: ${NYVRA_OIDC_TOKEN_URL:http://localhost:8081/realms/nyvra/protocol/openid-connect/token}
+  income:
+    # Where uploaded payslips live. `local` (default) writes under a temp directory for dev/tests;
+    # `s3` uses the S3 API (MinIO locally, a bucket per env elsewhere). See docs/operations/ENVIRONMENTS.md.
+    payslip-storage:
+      type: ${NYVRA_PAYSLIP_STORAGE:local}
+      endpoint: ${NYVRA_S3_ENDPOINT:http://localhost:9000}
+      bucket: ${NYVRA_S3_BUCKET:nyvra-documents}
+      access-key: ${NYVRA_S3_ACCESS_KEY:}
+      secret-key: ${NYVRA_S3_SECRET_KEY:}
+      region: ${NYVRA_S3_REGION:}
   # FINANCIAL_RULES.md §8 / HEALTH_SCORE_SPEC.md parameters. Changing a value that alters user-visible
   # scores requires bumping ruleset-version.
   financial-rules:
