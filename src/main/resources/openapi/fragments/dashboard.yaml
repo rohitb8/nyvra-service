@@ -1,0 +1,45 @@
+# Dashboard contract fragment — to be folded into nyvra-api-v1.yaml (paths + components) in a later pass.
+# Kept separate so the Dashboard PR does not touch the shared contract file. References to shared components
+# point at nyvra-api-v1.yaml and the other fragments.
+paths:
+  /api/v1/dashboard/summary:
+    get:
+      tags: [Dashboard]
+      operationId: getDashboardSummary
+      summary: Dashboard summary
+      description: >-
+        One call for the home screen. Each section is produced by its own module; a section that fails to load
+        is omitted and named in `unavailable`, and the rest is still returned with 200.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DashboardSummary' }
+        '401': { $ref: 'nyvra-api-v1.yaml#/components/responses/Unauthorized' }
+        '500': { $ref: 'nyvra-api-v1.yaml#/components/responses/InternalError' }
+components:
+  schemas:
+    DashboardSummary:
+      type: object
+      required: [asOf]
+      properties:
+        asOf: { type: string, format: date-time }
+        netWorth: { $ref: 'nyvra-api-v1.yaml#/components/schemas/NetWorth' }
+        portfolio: { $ref: 'nyvra-api-v1.yaml#/components/schemas/PortfolioSummary' }
+        healthScore: { $ref: 'nyvra-api-v1.yaml#/components/schemas/HealthScore' }
+        goals:
+          type: object
+          required: [activeCount, upcoming]
+          properties:
+            activeCount: { type: integer, format: int64 }
+            upcoming:
+              type: array
+              description: Up to three active goals, soonest target date first.
+              items: { $ref: 'goals.yaml#/components/schemas/Goal' }
+        income: { $ref: 'nyvra-api-v1.yaml#/components/schemas/IncomeSummary' }
+        spending: { $ref: 'nyvra-api-v1.yaml#/components/schemas/SpendingHabits' }
+        unavailable:
+          type: array
+          description: Sections left out because they failed to load. Absent when all loaded.
+          items: { type: string, enum: [netWorth, portfolio, healthScore, goals, income, spending] }
