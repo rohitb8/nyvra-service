@@ -39,4 +39,13 @@ public interface PortfolioHoldingRepository
      * @return the open holdings
      */
     List<PortfolioHolding> findByUserIdAndClosedAtIsNull(UUID userId);
+
+    /**
+     * Lists every position a user has ever held in an instrument, open or closed.
+     *
+     * @param userId the owning user
+     * @param instrumentId the instrument
+     * @return the holdings, usually zero or one
+     */
+    List<PortfolioHolding> findByUserIdAndInstrumentId(UUID userId, UUID instrumentId);
 }
