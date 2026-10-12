@@ -152,6 +152,22 @@ nyvra:
       history-full-days: 180
       medium-from: 0.5
       high-above: 0.8
+  # How the health score's drivers are gathered from income, expenses, accounts, portfolio and goals:
+  # windows, FINANCIAL_RULES.md §4.2/§6 gates and the recompute debounce (HEALTH_SCORE_SPEC.md §5).
+  health-score-inputs:
+    window-months: 3
+    history-months: 6
+    min-spend-months: 2
+    min-emergency-history-months: 3
+    variable-income-months-target: 9
+    min-corpus: 50000
+    min-holdings: 3
+    single-stock-warn-share: 0.10
+    single-stock-critical-share: 0.20
+    single-stock-warn-penalty: 10
+    single-stock-critical-penalty: 25
+    single-stock-max-penalty: 25
+    debounce-seconds: 60
   jobs:
     enabled: true
   partitions:

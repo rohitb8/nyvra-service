@@ -34,4 +34,21 @@ final class FinancialRulesFixture {
             throw new IllegalStateException("Cannot read application.yml", e);
         }
     }
+
+    /**
+     * Binds the {@code nyvra.health-score-inputs} section of {@code application.yml}.
+     *
+     * @return the shipped window and gate parameters
+     */
+    static HealthScoreInputRules loadInputs() {
+        try {
+            List<PropertySource<?>> sources = new YamlPropertySourceLoader()
+                .load("application", new ClassPathResource("application.yml"));
+            return new Binder(ConfigurationPropertySources.from(sources))
+                .bind("nyvra.health-score-inputs", HealthScoreInputRules.class)
+                .get();
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("Cannot read application.yml", e);
+        }
+    }
 }
