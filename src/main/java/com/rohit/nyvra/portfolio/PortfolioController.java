@@ -25,6 +25,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -117,8 +118,10 @@ public class PortfolioController {
      */
     @PostMapping("/instruments/{instrumentId}/quotes")
     @ResponseStatus(HttpStatus.CREATED)
-    @Operation(summary = "Record a price for an instrument",
-        description = "Quotes are shared by all users and drive current valuation of every holding.")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Record a price for an instrument (admin only)",
+        description = "Quotes are shared by all users and drive current valuation of every holding, so only "
+            + "users with the ADMIN realm role may record one. Everyone else receives 403.")
     public QuoteResponse recordQuote(@PathVariable UUID instrumentId, @Valid @RequestBody RecordQuoteRequest request) {
         return service.recordQuote(instrumentId, request);
     }
