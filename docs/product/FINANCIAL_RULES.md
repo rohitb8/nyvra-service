@@ -104,8 +104,12 @@ risk_adjustment             = { CONSERVATIVE: −15, BALANCED: 0, AGGRESSIVE: +1
 target_equity_pct           = clamp(base_equity_pct(age) + risk_adjustment, 20, 90)
 target_debt_pct             = 100 − target_equity_pct − target_gold_pct − target_cash_pct
 ```
+`age` is the user's age in whole years from `user_profile.date_of_birth`. A user with no stored date of birth is
+scored with `alloc.assumed_age` (35) instead. Ruleset `2026.2` (2026-10-12) is the first to use the real age.
+
 | Param | Default |
 |---|---|
+| `alloc.assumed_age` | `35` (used only when no date of birth is stored) |
 | `alloc.gold_pct` | `5` |
 | `alloc.cash_pct` | `5` (separate from emergency fund) |
 | `alloc.rebalance_band` | `±5` percentage points → `AllocationDrifted` event + insight |
@@ -169,7 +173,7 @@ Unevaluated groups reduce `confidence` (see `HEALTH_SCORE_SPEC.md`), not `overal
 
 ```yaml
 financial_rules:
-  ruleset_version: "2026.1"
+  ruleset_version: "2026.2"
   window_months_default: 3
   savings: { target_rate: 0.20, stretch_rate: 0.30, min_acceptable: 0.10 }
   ratio:   { essential_max: 0.50, discretionary_max: 0.30 }

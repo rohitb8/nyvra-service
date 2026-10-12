@@ -14,8 +14,8 @@ import com.rohit.nyvra.user.RiskBand;
  * {@link FinancialRules} or {@link HealthScoreInputRules}.
  *
  * <p>The user's preferences shape two drivers: their own emergency-fund target replaces the default, and their
- * risk band sets the equity target that allocation drift is measured against. The user's age is not stored yet,
- * so the glide path uses a configured assumed age.
+ * risk band sets the equity target that allocation drift is measured against. The glide path uses the user's
+ * age when a date of birth is stored and a configured assumed age otherwise.
  *
  * <p>Not yet derivable from stored data, and therefore reported as inactive: lifestyle creep, high-interest
  * debt (loans carry no APR), revolving card balances and the fixed-obligations ceiling. Single-AMC,
@@ -167,11 +167,13 @@ public final class DriverMetricsCalculator {
      * band's adjustment and clamped again.
      *
      * @param riskBand the user's risk appetite
+     * @param ageYears the user's age in whole years; {@code null} falls back to the configured assumed age
      * @param alloc    the allocation parameters
      * @return the target equity share of the portfolio, in percent
      */
-    static BigDecimal targetEquityPct(RiskBand riskBand, HealthScoreInputRules.Allocation alloc) {
-        BigDecimal base = BigDecimal.valueOf(alloc.glideBase() - alloc.assumedAge())
+    static BigDecimal targetEquityPct(RiskBand riskBand, Integer ageYears, HealthScoreInputRules.Allocation alloc) {
+        int age = ageYears != null ? ageYears : alloc.assumedAge();
+        BigDecimal base = BigDecimal.valueOf(alloc.glideBase() - age)
             .max(alloc.glideMinPct()).min(alloc.glideMaxPct());
         BigDecimal adjust = switch (riskBand) {
             case CONSERVATIVE -> alloc.conservativeAdjust();
@@ -202,7 +204,7 @@ public final class DriverMetricsCalculator {
         }
         BigDecimal actualPct = facts.equityValue().multiply(BigDecimal.valueOf(100))
             .divide(facts.portfolioValue(), SCALE, RoundingMode.HALF_UP);
-        BigDecimal drift = actualPct.subtract(targetEquityPct(facts.riskBand(), alloc)).abs();
+        BigDecimal drift = actualPct.subtract(targetEquityPct(facts.riskBand(), facts.ageYears(), alloc)).abs();
         if (drift.compareTo(alloc.rebalanceBandHard()) > 0) {
             return alloc.driftHardPenalty();
         }

@@ -238,6 +238,26 @@ class DriverMetricsCalculatorTest {
             .isEqualByComparingTo("25");
     }
 
+    /** A stored age moves the glide path; without one the assumed age of 35 applies. */
+    @Test
+    void ageMovesTheEquityTargetAndFallsBackToTheAssumedAge() {
+        DriverFacts base = withPreferences(healthy(), "1000000", "650000", "0", RiskBand.BALANCED, null);
+
+        // No age: assumed 35 gives a target of 65, so 65% equity is on target.
+        assertThat(penalty(base)).isEqualByComparingTo("0");
+        // Age 35 stored behaves the same as the assumption.
+        assertThat(penalty(withAge(base, 35))).isEqualByComparingTo("0");
+        // Age 25 targets 75%: 10 points of drift is past the soft band but not the hard one.
+        assertThat(penalty(withAge(base, 25))).isEqualByComparingTo("10");
+        // Age 60 targets 40%: 25 points of drift is past the hard band.
+        assertThat(penalty(withAge(base, 60))).isEqualByComparingTo("25");
+        // Age 90 is clamped to the glide-path floor of 30%, not allowed to fall below it.
+        assertThat(DriverMetricsCalculator.targetEquityPct(RiskBand.BALANCED, 90, INPUTS.allocation()))
+            .isEqualByComparingTo("30");
+        assertThat(DriverMetricsCalculator.targetEquityPct(RiskBand.BALANCED, null, INPUTS.allocation()))
+            .isEqualByComparingTo("65");
+    }
+
     /** Drift beyond the hard band costs the larger penalty, and the band edge itself is not a breach. */
     @Test
     void hardDriftReplacesTheSoftPenaltyAndTheBandEdgeIsTolerated() {
@@ -289,6 +309,23 @@ class DriverMetricsCalculatorTest {
         assertThat(DriverMetricsCalculator.calculate(
             withPreferences(base, "0", "0", "0", RiskBand.BALANCED, "3"), INPUTS, RULES).emergencyMonthsTarget())
             .isNull();
+    }
+
+    /**
+     * Copies facts with a known age.
+     *
+     * @param base     the facts to copy
+     * @param ageYears the user's age in whole years
+     * @return the changed facts
+     */
+    private static DriverFacts withAge(DriverFacts base, int ageYears) {
+        return new DriverFacts(base.windowIncomeNet(), base.incomeEntryCount(), base.monthsWithSpend(),
+            base.windowSpend(), base.windowEssential(), base.windowDiscretionary(), base.windowDebtRepayment(),
+            base.burnMonths(), base.burnTotal(), base.liquidKnown(), base.liquidAssets(), base.variableIncome(),
+            base.hasAccount(), base.liabilityAccountCount(), base.cardOutstanding(), base.cardLimit(),
+            base.portfolioValue(), base.holdingCount(), base.equityValue(), base.stockValues(), base.goalRatios(),
+            base.maxAccountStaleDays(), base.historyDays(), base.unclassifiedValue(), base.riskBand(),
+            base.userEmergencyTarget(), ageYears);
     }
 
     /**
