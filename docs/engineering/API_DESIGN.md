@@ -235,6 +235,28 @@ The score response mirrors `HEALTH_SCORE_SPEC.md` §1, with three deliberate dif
 3. `inputsHash` is internal (skip-recompute bookkeeping) and **not** exposed. `rulesetVersion` and
    `scoreSpecVersion` are, so a historical score stays explainable.
 
+### Net worth (`networth` module)
+
+| Method | Path | What | Notes |
+|---|---|---|---|
+| GET | `/net-worth` | current net worth | computed on demand from open accounts + manual items + portfolio; nothing stored; `breakdown` by bucket with per-side `sharePercent`; `staleItemCount` |
+| POST | `/net-worth/snapshots` | record today's snapshot | upserts the point for today (`Asia/Kolkata` day start); returns the stored figure |
+| GET | `/net-worth/history` | trend | `?from=&to=&granularity=DAY\|WEEK\|MONTH` (default last 180 days, `WEEK`); one point per bucket = the last snapshot in it; server-computed `change`; `400` if `from > to` or range > 10 years |
+| GET / POST | `/net-worth/manual-items` | list / add manual assets and liabilities | page; filter `kind`; INR only (`422 UNSUPPORTED_CURRENCY`), `422 NEGATIVE_VALUE`, `422 VALUE_DATE_IN_FUTURE`, `422 CLASS_KIND_MISMATCH` |
+| GET / PATCH / DELETE | `/net-worth/manual-items/{itemId}` | one item | PATCH with a new `value` and no `valueAsOf` confirms it as of today; DELETE is a soft delete; kind and currency are immutable |
+
+Design notes:
+1. **Liabilities are positive amounts.** `totalLiabilities` and liability buckets are what is owed;
+   `netWorth = totalAssets − totalLiabilities`. Loan and credit-card account balances count by magnitude
+   whichever sign the source stored.
+2. **Snapshots feed only the trend.** The current figure is never read from a snapshot. A snapshot is written
+   when a manual item changes and via `POST /net-worth/snapshots`; the daily job and event-driven recompute
+   from account/portfolio changes are not built yet, so days without activity have no point (no interpolation).
+3. **Portfolio is a seam.** `networth` reads the portfolio's value through `PortfolioValueSource`; until the
+   portfolio module provides it, the `INVESTMENTS` bucket and the `PORTFOLIO` source are zero.
+4. **Bucket and class names:** the response uses `bucket` (e.g. `CASH`, `REAL_ESTATE`, `LOAN`); manual items
+   use `itemClass`, mirroring `manual_asset_liability.class`.
+
 ### Ingestion (`ingestion` module)
 
 | Method | Path | What | Notes |
@@ -264,7 +286,7 @@ Design notes:
 
 ### Out of this draft (later passes)
 
-Portfolio, net worth, dashboard summary, trends, insights, goals, aggregator/consents, and the
+Portfolio, dashboard summary, trends, insights, goals, aggregator/consents, and the
 rest of `/users/me` (profile/preferences/consents/export/deletion). `GET /users/me` is in the spec
 because it already ships.
 
