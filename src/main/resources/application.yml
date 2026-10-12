@@ -167,6 +167,24 @@ nyvra:
     single-stock-warn-penalty: 10
     single-stock-critical-penalty: 25
     single-stock-max-penalty: 25
+    # FINANCIAL_RULES.md §4.1 glide path and HEALTH_SCORE_SPEC.md §3.5 drift penalties. The user's age is not
+    # stored yet, so assumed-age stands in for it until it is captured.
+    allocation:
+      assumed-age: 35
+      glide-base: 100
+      glide-min-pct: 30
+      glide-max-pct: 90
+      conservative-adjust: -15
+      balanced-adjust: 0
+      aggressive-adjust: 10
+      target-min-pct: 20
+      target-max-pct: 90
+      rebalance-band: 5
+      rebalance-band-hard: 10
+      drift-penalty: 10
+      drift-hard-penalty: 25
+      # Mutual funds and NPS mix equity and debt, so drift is only judged while they stay under this share.
+      max-unclassified-share: 0.10
     debounce-seconds: 60
   jobs:
     enabled: true

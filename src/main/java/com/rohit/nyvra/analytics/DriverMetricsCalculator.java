@@ -5,16 +5,21 @@ import java.math.RoundingMode;
 import java.util.EnumSet;
 import java.util.Set;
 
+import com.rohit.nyvra.user.RiskBand;
+
 /**
  * Applies the data-sufficiency gates (FINANCIAL_RULES section 6) and the driver formulas to
  * {@link DriverFacts}. A driver whose gate fails is {@code null}, so its sub-score is "not evaluated" and
  * the matching {@link MissingData} item is reported. Pure arithmetic; every number comes from
  * {@link FinancialRules} or {@link HealthScoreInputRules}.
  *
+ * <p>The user's preferences shape two drivers: their own emergency-fund target replaces the default, and their
+ * risk band sets the equity target that allocation drift is measured against. The user's age is not stored yet,
+ * so the glide path uses a configured assumed age.
+ *
  * <p>Not yet derivable from stored data, and therefore reported as inactive: lifestyle creep, high-interest
- * debt (loans carry no APR), revolving card balances, fixed-obligations ceiling, the user's own emergency
- * target and equity-allocation drift (no age or risk profile). Single-AMC, fund-overlap and employer-stock
- * penalties need data the portfolio does not hold yet.
+ * debt (loans carry no APR), revolving card balances and the fixed-obligations ceiling. Single-AMC,
+ * fund-overlap and employer-stock penalties need data the portfolio does not hold yet.
  */
 public final class DriverMetricsCalculator {
 
@@ -70,8 +75,7 @@ public final class DriverMetricsCalculator {
                 .divide(BigDecimal.valueOf(facts.burnMonths()), SCALE, RoundingMode.HALF_UP);
             emergencyMonths = facts.liquidAssets().divide(monthlyBurn, SCALE, RoundingMode.HALF_UP);
         }
-        BigDecimal emergencyTarget = facts.variableIncome()
-            ? inputs.variableIncomeMonthsTarget().max(rules.emergency().monthsTarget()) : null;
+        BigDecimal emergencyTarget = emergencyTarget(facts, inputs, rules);
 
         DriverMetrics.DebtMetrics debt = debt(facts, income, incomeOk && spendOk);
         if (debt == null) {
@@ -86,6 +90,26 @@ public final class DriverMetricsCalculator {
         return new DriverMetrics(savingsRate, essentialRatio, discretionaryRatio, false, emergencyMonths,
             emergencyTarget, debt, diversification, goalProgress(facts), false, false,
             facts.maxAccountStaleDays(), facts.historyDays(), missing);
+    }
+
+    /**
+     * The effective emergency-fund months target (spec section 3.3): the user's own target when set, else the
+     * variable-income target when income is irregular, else {@code null} for the rules default. A user target
+     * at or below the minimum months would flatten the ramp, so it is ignored.
+     *
+     * @param facts  the facts
+     * @param inputs the gate parameters
+     * @param rules  the financial rules
+     * @return the target months, or {@code null} to use the default
+     */
+    private static BigDecimal emergencyTarget(DriverFacts facts, HealthScoreInputRules inputs,
+                                              FinancialRules rules) {
+        BigDecimal own = facts.userEmergencyTarget();
+        if (own != null && own.compareTo(rules.emergency().monthsMin()) > 0) {
+            return own;
+        }
+        return facts.variableIncome()
+            ? inputs.variableIncomeMonthsTarget().max(rules.emergency().monthsTarget()) : null;
     }
 
     /**
@@ -114,7 +138,7 @@ public final class DriverMetricsCalculator {
 
     /**
      * Totals the diversification penalty (spec section 3.5) that can be derived from holdings: the
-     * single-direct-stock concentration check.
+     * single-direct-stock concentration check plus equity-allocation drift from the risk-band target.
      *
      * @param facts  the facts
      * @param inputs the gate and concentration parameters
@@ -135,7 +159,54 @@ public final class DriverMetricsCalculator {
                 }
             }
         }
-        return penalty.min(inputs.singleStockMaxPenalty());
+        return penalty.min(inputs.singleStockMaxPenalty()).add(driftPenalty(facts, inputs));
+    }
+
+    /**
+     * The target equity percentage (FINANCIAL_RULES section 4.1): the age glide path clamped, shifted by the risk
+     * band's adjustment and clamped again.
+     *
+     * @param riskBand the user's risk appetite
+     * @param alloc    the allocation parameters
+     * @return the target equity share of the portfolio, in percent
+     */
+    static BigDecimal targetEquityPct(RiskBand riskBand, HealthScoreInputRules.Allocation alloc) {
+        BigDecimal base = BigDecimal.valueOf(alloc.glideBase() - alloc.assumedAge())
+            .max(alloc.glideMinPct()).min(alloc.glideMaxPct());
+        BigDecimal adjust = switch (riskBand) {
+            case CONSERVATIVE -> alloc.conservativeAdjust();
+            case BALANCED -> alloc.balancedAdjust();
+            case AGGRESSIVE -> alloc.aggressiveAdjust();
+        };
+        return base.add(adjust).max(alloc.targetMinPct()).min(alloc.targetMaxPct());
+    }
+
+    /**
+     * Penalty for equity allocation outside the rebalance band of the risk-band target (spec section 3.5).
+     * Direct equity is the only holding with a known equity share, so drift is skipped while unclassified
+     * holdings (mutual funds, NPS) are too large a part of the portfolio for the equity share to be trusted.
+     *
+     * @param facts  the facts
+     * @param inputs the gate and allocation parameters
+     * @return the penalty points, zero when within the band or when drift cannot be judged
+     */
+    private static BigDecimal driftPenalty(DriverFacts facts, HealthScoreInputRules inputs) {
+        HealthScoreInputRules.Allocation alloc = inputs.allocation();
+        if (facts.portfolioValue().signum() <= 0) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal unclassifiedShare = facts.unclassifiedValue()
+            .divide(facts.portfolioValue(), SCALE, RoundingMode.HALF_UP);
+        if (unclassifiedShare.compareTo(alloc.maxUnclassifiedShare()) > 0) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal actualPct = facts.equityValue().multiply(BigDecimal.valueOf(100))
+            .divide(facts.portfolioValue(), SCALE, RoundingMode.HALF_UP);
+        BigDecimal drift = actualPct.subtract(targetEquityPct(facts.riskBand(), alloc)).abs();
+        if (drift.compareTo(alloc.rebalanceBandHard()) > 0) {
+            return alloc.driftHardPenalty();
+        }
+        return drift.compareTo(alloc.rebalanceBand()) > 0 ? alloc.driftPenalty() : BigDecimal.ZERO;
     }
 
     /**
