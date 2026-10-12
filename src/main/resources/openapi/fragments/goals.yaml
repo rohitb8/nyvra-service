@@ -1,0 +1,294 @@
+# Goals contract fragment — to be folded into nyvra-api-v1.yaml (paths + components) in a later pass.
+# Kept separate so the Goals PR does not touch the shared contract file. References to shared components
+# (Money, PageMeta, Page, Size, Unauthorized, ...) point at nyvra-api-v1.yaml.
+paths:
+  /api/v1/goals:
+    get:
+      tags: [Goals]
+      operationId: listGoals
+      summary: List goals
+      description: Each goal carries its progress as of today (Asia/Kolkata).
+      parameters:
+        - $ref: 'nyvra-api-v1.yaml#/components/parameters/Page'
+        - $ref: 'nyvra-api-v1.yaml#/components/parameters/Size'
+        - name: status
+          in: query
+          description: Only goals in these states. Omitted means all.
+          schema: { type: array, items: { $ref: '#/components/schemas/GoalStatus' } }
+          style: form
+          explode: true
+        - name: sort
+          in: query
+          description: '`field,asc|desc`. Fields: `name`, `targetDate`, `createdAt`. Default `targetDate,asc`.'
+          schema: { type: array, items: { type: string } }
+          style: form
+          explode: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GoalPage' }
+        '400': { $ref: 'nyvra-api-v1.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'nyvra-api-v1.yaml#/components/responses/Unauthorized' }
+        '500': { $ref: 'nyvra-api-v1.yaml#/components/responses/InternalError' }
+    post:
+      tags: [Goals]
+      operationId: createGoal
+      summary: Create a goal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateGoalRequest' }
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Goal' }
+        '400': { $ref: 'nyvra-api-v1.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'nyvra-api-v1.yaml#/components/responses/Unauthorized' }
+        '422':
+          description: "`UNSUPPORTED_CURRENCY`, `GOAL_DATES_INVALID` or `GOAL_TARGET_DATE_IN_PAST`."
+          content:
+            application/json:
+              schema: { $ref: 'nyvra-api-v1.yaml#/components/schemas/ApiError' }
+        '500': { $ref: 'nyvra-api-v1.yaml#/components/responses/InternalError' }
+
+  /api/v1/goals/{goalId}:
+    parameters:
+      - $ref: '#/components/parameters/GoalId'
+    get:
+      tags: [Goals]
+      operationId: getGoal
+      summary: Get one goal
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Goal' }
+        '401': { $ref: 'nyvra-api-v1.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'nyvra-api-v1.yaml#/components/responses/NotFound' }
+        '500': { $ref: 'nyvra-api-v1.yaml#/components/responses/InternalError' }
+    patch:
+      tags: [Goals]
+      operationId: updateGoal
+      summary: Update a goal
+      description: Omitted fields are unchanged. Start date and currency are fixed at creation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateGoalRequest' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Goal' }
+        '400': { $ref: 'nyvra-api-v1.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'nyvra-api-v1.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'nyvra-api-v1.yaml#/components/responses/NotFound' }
+        '422':
+          description: "`UNSUPPORTED_CURRENCY` or `GOAL_DATES_INVALID`."
+          content:
+            application/json:
+              schema: { $ref: 'nyvra-api-v1.yaml#/components/schemas/ApiError' }
+        '500': { $ref: 'nyvra-api-v1.yaml#/components/responses/InternalError' }
+    delete:
+      tags: [Goals]
+      operationId: deleteGoal
+      summary: Delete a goal
+      description: Removes the goal and all its contributions. Use `status=ARCHIVED` to keep history instead.
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: 'nyvra-api-v1.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'nyvra-api-v1.yaml#/components/responses/NotFound' }
+        '500': { $ref: 'nyvra-api-v1.yaml#/components/responses/InternalError' }
+
+  /api/v1/goals/{goalId}/contributions:
+    parameters:
+      - $ref: '#/components/parameters/GoalId'
+    get:
+      tags: [Goals]
+      operationId: listGoalContributions
+      summary: List contributions to a goal
+      parameters:
+        - $ref: 'nyvra-api-v1.yaml#/components/parameters/Page'
+        - $ref: 'nyvra-api-v1.yaml#/components/parameters/Size'
+        - name: sort
+          in: query
+          description: '`field,asc|desc`. Fields: `contributedOn`, `createdAt`. Default `contributedOn,desc`.'
+          schema: { type: array, items: { type: string } }
+          style: form
+          explode: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GoalContributionPage' }
+        '400': { $ref: 'nyvra-api-v1.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'nyvra-api-v1.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'nyvra-api-v1.yaml#/components/responses/NotFound' }
+        '500': { $ref: 'nyvra-api-v1.yaml#/components/responses/InternalError' }
+    post:
+      tags: [Goals]
+      operationId: addGoalContribution
+      summary: Add a contribution to a goal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateGoalContributionRequest' }
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GoalContribution' }
+        '400': { $ref: 'nyvra-api-v1.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'nyvra-api-v1.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'nyvra-api-v1.yaml#/components/responses/NotFound' }
+        '409':
+          description: "`GOAL_ARCHIVED` — archived goals don't accept contributions."
+          content:
+            application/json:
+              schema: { $ref: 'nyvra-api-v1.yaml#/components/schemas/ApiError' }
+        '422':
+          description: "`UNSUPPORTED_CURRENCY` or `CONTRIBUTION_DATE_IN_FUTURE`."
+          content:
+            application/json:
+              schema: { $ref: 'nyvra-api-v1.yaml#/components/schemas/ApiError' }
+        '500': { $ref: 'nyvra-api-v1.yaml#/components/responses/InternalError' }
+
+  /api/v1/goals/{goalId}/contributions/{contributionId}:
+    parameters:
+      - $ref: '#/components/parameters/GoalId'
+      - name: contributionId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [Goals]
+      operationId: deleteGoalContribution
+      summary: Delete a contribution
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: 'nyvra-api-v1.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'nyvra-api-v1.yaml#/components/responses/NotFound' }
+        '500': { $ref: 'nyvra-api-v1.yaml#/components/responses/InternalError' }
+
+components:
+  parameters:
+    GoalId:
+      name: goalId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  schemas:
+    GoalType:
+      type: string
+      enum: [EMERGENCY_FUND, HOME, VEHICLE, EDUCATION, RETIREMENT, TRAVEL, WEDDING, OTHER]
+    GoalStatus:
+      type: string
+      enum: [ACTIVE, ARCHIVED]
+      description: Archived goals are ignored by the health score and accept no new contributions.
+
+    GoalProgress:
+      type: object
+      description: All figures are computed server-side (straight-line accrual from start date to target date).
+      required: [asOf, allocated, requiredToDate, remaining, percentComplete, progressRatio, daysRemaining, onTrack, achieved]
+      properties:
+        asOf: { type: string, format: date }
+        allocated: { $ref: 'nyvra-api-v1.yaml#/components/schemas/Money' }
+        requiredToDate: { $ref: 'nyvra-api-v1.yaml#/components/schemas/Money' }
+        remaining: { $ref: 'nyvra-api-v1.yaml#/components/schemas/Money' }
+        percentComplete: { type: number, minimum: 0, maximum: 100, description: Percent points. }
+        progressRatio: { type: number, minimum: 0, maximum: 1, description: Per-goal health-score input. }
+        daysRemaining: { type: integer, minimum: 0 }
+        onTrack: { type: boolean }
+        achieved: { type: boolean }
+
+    Goal:
+      type: object
+      required: [id, name, type, targetAmount, startDate, targetDate, weight, status, progress, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, maxLength: 80 }
+        type: { $ref: '#/components/schemas/GoalType' }
+        targetAmount: { $ref: 'nyvra-api-v1.yaml#/components/schemas/Money' }
+        startDate: { type: string, format: date }
+        targetDate: { type: string, format: date }
+        weight: { type: integer, minimum: 1, maximum: 10 }
+        status: { $ref: '#/components/schemas/GoalStatus' }
+        progress: { $ref: '#/components/schemas/GoalProgress' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    GoalPage:
+      allOf:
+        - $ref: 'nyvra-api-v1.yaml#/components/schemas/PageMeta'
+        - type: object
+          required: [content]
+          properties:
+            content:
+              type: array
+              items: { $ref: '#/components/schemas/Goal' }
+
+    CreateGoalRequest:
+      type: object
+      required: [name, type, targetAmount, targetDate]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        type: { $ref: '#/components/schemas/GoalType' }
+        targetAmount: { $ref: 'nyvra-api-v1.yaml#/components/schemas/Money' }
+        startDate: { type: string, format: date, description: Defaults to today (Asia/Kolkata). }
+        targetDate: { type: string, format: date, description: Must be after today and after `startDate`. }
+        weight: { type: integer, minimum: 1, maximum: 10, default: 1 }
+
+    UpdateGoalRequest:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        type: { $ref: '#/components/schemas/GoalType' }
+        targetAmount: { $ref: 'nyvra-api-v1.yaml#/components/schemas/Money' }
+        targetDate: { type: string, format: date }
+        weight: { type: integer, minimum: 1, maximum: 10 }
+        status: { $ref: '#/components/schemas/GoalStatus' }
+
+    GoalContribution:
+      type: object
+      required: [id, goalId, amount, contributedOn, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        goalId: { type: string, format: uuid }
+        amount: { $ref: 'nyvra-api-v1.yaml#/components/schemas/Money' }
+        contributedOn: { type: string, format: date }
+        note: { type: string, maxLength: 200 }
+        createdAt: { type: string, format: date-time }
+
+    GoalContributionPage:
+      allOf:
+        - $ref: 'nyvra-api-v1.yaml#/components/schemas/PageMeta'
+        - type: object
+          required: [content]
+          properties:
+            content:
+              type: array
+              items: { $ref: '#/components/schemas/GoalContribution' }
+
+    CreateGoalContributionRequest:
+      type: object
+      required: [amount]
+      properties:
+        amount: { $ref: 'nyvra-api-v1.yaml#/components/schemas/Money' }
+        contributedOn: { type: string, format: date, description: Not in the future. Defaults to today (Asia/Kolkata). }
+        note: { type: string, maxLength: 200 }
