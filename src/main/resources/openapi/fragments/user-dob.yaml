@@ -3,7 +3,7 @@
 # point at nyvra-api-v1.yaml.
 #
 # Also folds in one additive property on the existing UserProfileResponse schema (GET /users/me):
-#   dateOfBirth: { type: string, format: date, nullable: true, description: 'Absent/null until the user sets it.' }
+#   dateOfBirth: { type: string, format: date, description: 'Omitted until the user sets it.' }
 paths:
   /api/v1/users/me/date-of-birth:
     put:

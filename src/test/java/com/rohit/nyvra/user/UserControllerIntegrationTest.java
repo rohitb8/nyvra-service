@@ -2,7 +2,6 @@ package com.rohit.nyvra.user;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -63,7 +62,7 @@ class UserControllerIntegrationTest extends AbstractIntegrationTest {
             .andExpect(jsonPath("$.email", equalTo("controller-test@nyvra.local")))
             .andExpect(jsonPath("$.displayName", equalTo("Controller Test User")))
             .andExpect(jsonPath("$.baseCurrency", equalTo("INR")))
-            .andExpect(jsonPath("$.dateOfBirth", nullValue()));
+            .andExpect(jsonPath("$.dateOfBirth").doesNotExist());
 
         assertThat(repository.findByKeycloakSubject("controller-test-subject")).isPresent();
     }
@@ -86,7 +85,7 @@ class UserControllerIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(put("/api/v1/users/me/date-of-birth").with(caller)
                 .contentType(MediaType.APPLICATION_JSON).content("{\"dateOfBirth\":null}"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.dateOfBirth", nullValue()));
+            .andExpect(jsonPath("$.dateOfBirth").doesNotExist());
         assertThat(preferencesReader.scorePreferences(userId).dateOfBirth()).isNull();
     }
 
