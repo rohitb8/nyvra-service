@@ -10,7 +10,7 @@ info:
     export matches this file.
 
     Covered: users/me (shipped), accounts + transactions, income, expenses + categories +
-    categorisation rules + spending habits, health score, portfolio (instruments, quotes,
+    categorisation rules + spending habits, health score, net worth, insights, portfolio (instruments, quotes,
     holdings, summary).
 servers:
   - url: /
@@ -18,6 +18,8 @@ servers:
 security:
   - keycloak: []
 tags:
+  - name: Ingestion
+    description: Account Aggregator consents and the data fetches run under them.
   - name: User
     description: The caller's profile.
   - name: Accounts
@@ -34,6 +36,10 @@ tags:
     description: Server-computed spending breakdowns.
   - name: Health score
     description: The Financial Health Score (HEALTH_SCORE_SPEC.md).
+  - name: Insights
+    description: Findings the rules engine raises (FINANCIAL_RULES.md), most serious first.
+  - name: Net worth
+    description: Assets minus liabilities, its trend, and hand-maintained assets and liabilities.
   - name: Portfolio
     description: Instruments, price quotes, holdings and the portfolio summary.
 
@@ -1002,6 +1008,489 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  # ------------------------------------------------------------------ Net worth
+  /api/v1/net-worth:
+    get:
+      tags: [Net worth]
+      operationId: getNetWorth
+      summary: Current net worth
+      description: |
+        Computed on demand from open accounts, manual entries and the portfolio; nothing is stored, so the
+        figure is never stale. Loan and credit-card balances count as liabilities by magnitude. Closed
+        accounts are excluded. `breakdown` lists only non-empty buckets, assets first.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NetWorth' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/net-worth/snapshots:
+    post:
+      tags: [Net worth]
+      operationId: recordNetWorthSnapshot
+      summary: Record today's snapshot
+      description: |
+        Values net worth now and stores it as today's point in the trend (day boundaries are in
+        `Asia/Kolkata`), replacing an earlier snapshot from the same day. Safe to call repeatedly. Creating,
+        changing or deleting a manual item does this automatically.
+      responses:
+        '200':
+          description: The stored figure.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NetWorth' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/net-worth/history:
+    get:
+      tags: [Net worth]
+      operationId: getNetWorthHistory
+      summary: Net worth trend
+      description: |
+        One point per bucket: the last snapshot in it. Buckets with no snapshot are omitted (no
+        interpolation). `change` is the movement from the first to the last point, computed by the server.
+        Returns `400` when `from` is after `to` or the range exceeds ten years.
+      parameters:
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - name: granularity
+          in: query
+          schema: { type: string, enum: [DAY, WEEK, MONTH], default: WEEK }
+      responses:
+        '200':
+          description: OK. Defaults to the last 180 days.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NetWorthHistory' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/net-worth/manual-items:
+    get:
+      tags: [Net worth]
+      operationId: listManualItems
+      summary: List manual assets and liabilities
+      parameters:
+        - name: kind
+          in: query
+          schema: { $ref: '#/components/schemas/ManualItemKind' }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: OK. Oldest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManualItemPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      tags: [Net worth]
+      operationId: createManualItem
+      summary: Add a manual asset or liability
+      description: |
+        Domain rules (`422`): `UNSUPPORTED_CURRENCY` (INR only), `NEGATIVE_VALUE` (enter a liability as the
+        positive amount owed), `VALUE_DATE_IN_FUTURE`, `CLASS_KIND_MISMATCH` (`REAL_ESTATE`, `VEHICLE`,
+        `JEWELLERY`, `PRIVATE_EQUITY` are assets only; `PERSONAL_LOAN` is a liability only; `OTHER` fits both).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateManualItemRequest' }
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManualItem' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/net-worth/manual-items/{itemId}:
+    parameters:
+      - name: itemId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Net worth]
+      operationId: getManualItem
+      summary: Get one manual asset or liability
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManualItem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    patch:
+      tags: [Net worth]
+      operationId: updateManualItem
+      summary: Update a manual asset or liability
+      description: |
+        Omitted fields are unchanged. `kind` and currency can't change. Sending a new `value` without
+        `valueAsOf` confirms it as of today, which clears `stale`. Same `422` rules as create.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateManualItemRequest' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManualItem' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    delete:
+      tags: [Net worth]
+      operationId: deleteManualItem
+      summary: Delete a manual asset or liability
+      description: Soft delete; the item stops counting towards net worth.
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ------------------------------------------------------------------ Insights
+  /api/v1/insights:
+    get:
+      tags: [Insights]
+      operationId: listInsights
+      summary: List insights
+      description: |
+        The caller's insights, most serious first (`CRITICAL`, `WARN`, `INFO`), newest first within a
+        severity (FINANCIAL_RULES §7 precedence). Defaults to `ACTIVE` ones. A rule has at most one
+        `ACTIVE` insight; when its finding changes the old one becomes `SUPERSEDED`.
+      parameters:
+        - name: status
+          in: query
+          description: Defaults to `ACTIVE`.
+          schema: { $ref: '#/components/schemas/InsightStatus' }
+        - name: severity
+          in: query
+          description: Only these severities. Omit for all.
+          schema: { type: array, items: { $ref: '#/components/schemas/InsightSeverity' } }
+          style: form
+          explode: true
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InsightPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/insights/{insightId}/dismiss:
+    parameters:
+      - name: insightId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Insights]
+      operationId: dismissInsight
+      summary: Dismiss an insight
+      description: |
+        Hides the insight from the default list. Dismissing an already dismissed insight is a no-op `200`.
+        A dismissed insight stays dismissed while the finding is unchanged and comes back as a new
+        `ACTIVE` insight if the finding changes. A `SUPERSEDED` insight can't be dismissed
+        (`409 INSIGHT_SUPERSEDED`).
+      responses:
+        '200':
+          description: Dismissed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Insight' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ------------------------------------------------------------------ Ingestion
+  /api/v1/ingestion/consents:
+    get:
+      tags: [Ingestion]
+      operationId: listAggregatorConsents
+      summary: List aggregator consents
+      description: The caller's Account Aggregator consents, newest first.
+      parameters:
+        - name: status
+          in: query
+          description: Only these states. Omit for all.
+          schema: { type: array, items: { $ref: '#/components/schemas/ConsentStatus' } }
+          style: form
+          explode: true
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConsentPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      tags: [Ingestion]
+      operationId: requestAggregatorConsent
+      summary: Request an aggregator consent
+      description: |
+        Starts a consent request at the Account Aggregator; the consent is `REQUESTED` until the user approves
+        it there and the client calls `activate`. Data is only ever fetched while a consent is `ACTIVE`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateConsentRequest' }
+      responses:
+        '201':
+          description: Created. `Location` points at the consent.
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Consent' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/ingestion/consents/{consentId}:
+    parameters:
+      - $ref: '#/components/parameters/ConsentId'
+    get:
+      tags: [Ingestion]
+      operationId: getAggregatorConsent
+      summary: Get one consent
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Consent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/ingestion/consents/{consentId}/activate:
+    parameters:
+      - $ref: '#/components/parameters/ConsentId'
+    post:
+      tags: [Ingestion]
+      operationId: activateAggregatorConsent
+      summary: Activate an approved consent
+      description: |
+        Called after the user approved the consent at the aggregator, with the consent artefact id it issued.
+        `REQUESTED` -> `ACTIVE`; any other state is `409 INVALID_CONSENT_STATE`. `422 AGGREGATOR_REJECTED` if
+        the aggregator does not confirm the approval.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ActivateConsentRequest' }
+      responses:
+        '200':
+          description: Active
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Consent' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/ingestion/consents/{consentId}/pause:
+    parameters:
+      - $ref: '#/components/parameters/ConsentId'
+    post:
+      tags: [Ingestion]
+      operationId: pauseAggregatorConsent
+      summary: Pause a consent
+      description: '`ACTIVE` -> `PAUSED`; no fetch while paused. Any other state is `409 INVALID_CONSENT_STATE`.'
+      responses:
+        '200':
+          description: Paused
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Consent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/ingestion/consents/{consentId}/resume:
+    parameters:
+      - $ref: '#/components/parameters/ConsentId'
+    post:
+      tags: [Ingestion]
+      operationId: resumeAggregatorConsent
+      summary: Resume a paused consent
+      description: '`PAUSED` -> `ACTIVE`. Any other state is `409 INVALID_CONSENT_STATE`.'
+      responses:
+        '200':
+          description: Active
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Consent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/ingestion/consents/{consentId}/revoke:
+    parameters:
+      - $ref: '#/components/parameters/ConsentId'
+    post:
+      tags: [Ingestion]
+      operationId: revokeAggregatorConsent
+      summary: Revoke a consent
+      description: |
+        Withdraws the consent at the aggregator. Already-imported data stays; no further fetch is possible.
+        Revoking a `REVOKED` or `EXPIRED` consent is `409 INVALID_CONSENT_STATE`.
+      responses:
+        '200':
+          description: Revoked
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Consent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/ingestion/consents/{consentId}/fetches:
+    parameters:
+      - $ref: '#/components/parameters/ConsentId'
+    post:
+      tags: [Ingestion]
+      operationId: triggerAggregatorFetch
+      summary: Fetch data under a consent
+      description: |
+        Pulls data for the range (default: the consent's whole range), stores the raw payloads encrypted and
+        normalises them into events for the other modules. Idempotent per consent and range: repeating the call
+        returns the existing session with `200` instead of fetching again. An aggregator failure is recorded on
+        the session (`status: FAILED`, `error`) and still returns `202`. The body may be omitted.
+        `409 CONSENT_NOT_ACTIVE` unless the consent is `ACTIVE` and unexpired;
+        `422 FETCH_RANGE_INVALID` if the range is reversed or outside the consent's range.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TriggerFetchRequest' }
+      responses:
+        '200':
+          description: This consent and range were fetched before; the existing session.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FetchSession' }
+        '202':
+          description: A new fetch ran. `Location` points at the session.
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FetchSession' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/ingestion/fetches:
+    get:
+      tags: [Ingestion]
+      operationId: listAggregatorFetches
+      summary: List fetch sessions
+      description: The caller's fetch sessions, newest first. Raw provider data is never exposed.
+      parameters:
+        - name: consentId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          description: Only these states. Omit for all.
+          schema: { type: array, items: { $ref: '#/components/schemas/FetchStatus' } }
+          style: form
+          explode: true
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FetchSessionPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/ingestion/fetches/{fetchId}:
+    parameters:
+      - $ref: '#/components/parameters/FetchId'
+    get:
+      tags: [Ingestion]
+      operationId: getAggregatorFetch
+      summary: Get one fetch session
+      description: Includes the summary of its latest normalisation run, with counts of anything that could not be mapped.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FetchSession' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/ingestion/fetches/{fetchId}/normalise:
+    parameters:
+      - $ref: '#/components/parameters/FetchId'
+    post:
+      tags: [Ingestion]
+      operationId: renormaliseAggregatorFetch
+      summary: Re-run normalisation for a fetch
+      description: |
+        Normalises the stored raw records again and republishes the events. Safe: every transaction carries a
+        stable `dedupKey`, so consumers do not double-count. Only a `COMPLETED` fetch (`409 FETCH_NOT_COMPLETED`)
+        whose raw records have not been purged.
+      responses:
+        '200':
+          description: The session with its new normalisation summary.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FetchSession' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   # ------------------------------------------------------------------ Portfolio
   /api/v1/portfolio/instruments:
     get:
@@ -1238,6 +1727,16 @@ components:
           scopes: {}
 
   parameters:
+    ConsentId:
+      name: consentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    FetchId:
+      name: fetchId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     Page:
       name: page
       in: query
@@ -2061,6 +2560,255 @@ components:
               asOf: { type: string, format: date-time }
               overall: { type: number, format: double, description: "Absent for INSUFFICIENT_DATA points." }
               band: { $ref: '#/components/schemas/ScoreBand' }
+
+    NetWorthBucket:
+      type: string
+      description: |
+        Breakdown bucket. Assets: CASH (savings, current), DEPOSITS (term, recurring), RETIREMENT (EPF, NPS),
+        INVESTMENTS (portfolio), REAL_ESTATE, VEHICLE, JEWELLERY, PRIVATE_EQUITY, OTHER_ASSET.
+        Liabilities: LOAN, CREDIT_CARD, PERSONAL_LOAN, OTHER_LIABILITY.
+      enum: [CASH, DEPOSITS, RETIREMENT, INVESTMENTS, REAL_ESTATE, VEHICLE, JEWELLERY, PRIVATE_EQUITY, OTHER_ASSET,
+             LOAN, CREDIT_CARD, PERSONAL_LOAN, OTHER_LIABILITY]
+
+    NetWorth:
+      type: object
+      required: [asOf, totalAssets, totalLiabilities, netWorth, breakdown, contributingSources, staleItemCount]
+      properties:
+        asOf: { type: string, format: date-time }
+        totalAssets: { $ref: '#/components/schemas/Money' }
+        totalLiabilities:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: Positive amount owed.
+        netWorth:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: Assets minus liabilities; negative when liabilities exceed assets.
+        breakdown:
+          type: array
+          items:
+            type: object
+            required: [bucket, liability, amount, sharePercent]
+            properties:
+              bucket: { $ref: '#/components/schemas/NetWorthBucket' }
+              liability: { type: boolean, description: "True when the bucket counts against net worth." }
+              amount: { $ref: '#/components/schemas/Money' }
+              sharePercent:
+                type: number
+                format: double
+                description: Share of its own side (assets or liabilities) in percent points, 1 decimal; 0 when that side totals zero.
+        contributingSources:
+          type: array
+          items:
+            type: object
+            required: [source, assets, liabilities, itemCount]
+            properties:
+              source: { type: string, enum: [ACCOUNTS, PORTFOLIO, MANUAL] }
+              assets: { $ref: '#/components/schemas/Money' }
+              liabilities: { $ref: '#/components/schemas/Money' }
+              itemCount: { type: integer }
+        staleItemCount:
+          type: integer
+          description: Accounts with status STALE plus manual items past their revaluation cadence.
+
+    NetWorthHistory:
+      type: object
+      required: [granularity, from, to, points]
+      properties:
+        granularity: { type: string, enum: [DAY, WEEK, MONTH] }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        points:
+          type: array
+          items:
+            type: object
+            required: [asOf, totalAssets, totalLiabilities, netWorth]
+            properties:
+              asOf: { type: string, format: date-time }
+              totalAssets: { $ref: '#/components/schemas/Money' }
+              totalLiabilities: { $ref: '#/components/schemas/Money' }
+              netWorth: { $ref: '#/components/schemas/Money' }
+        change:
+          type: object
+          description: First point to last point. Absent with fewer than two points.
+          required: [amount]
+          properties:
+            amount: { $ref: '#/components/schemas/Money' }
+            percent: { type: number, format: double, description: "1 decimal. Absent when the first net worth is zero or negative." }
+
+    ManualItemKind:
+      type: string
+      enum: [ASSET, LIABILITY]
+
+    ManualItemClass:
+      type: string
+      enum: [REAL_ESTATE, VEHICLE, JEWELLERY, PRIVATE_EQUITY, PERSONAL_LOAN, OTHER]
+
+    ManualItem:
+      type: object
+      required: [id, kind, itemClass, value, valueAsOf, stale, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { $ref: '#/components/schemas/ManualItemKind' }
+        itemClass: { $ref: '#/components/schemas/ManualItemClass' }
+        label: { type: string, maxLength: 80 }
+        value: { $ref: '#/components/schemas/Money' }
+        valueAsOf: { type: string, format: date }
+        revaluationCadenceDays:
+          type: integer
+          description: Days a value stays fresh. Absent means it never goes stale.
+        stale: { type: boolean, description: "True once `valueAsOf` + cadence is before today." }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    ManualItemPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required: [content]
+          properties:
+            content:
+              type: array
+              items: { $ref: '#/components/schemas/ManualItem' }
+
+    CreateManualItemRequest:
+      type: object
+      required: [kind, itemClass, value]
+      properties:
+        kind: { $ref: '#/components/schemas/ManualItemKind' }
+        itemClass: { $ref: '#/components/schemas/ManualItemClass' }
+        label: { type: string, maxLength: 80 }
+        value: { $ref: '#/components/schemas/Money' }
+        valueAsOf: { type: string, format: date, description: "Defaults to today; not in the future." }
+        revaluationCadenceDays: { type: integer, minimum: 1, maximum: 3650 }
+
+    UpdateManualItemRequest:
+      type: object
+      properties:
+        itemClass: { $ref: '#/components/schemas/ManualItemClass' }
+        label: { type: string, maxLength: 80 }
+        value: { $ref: '#/components/schemas/Money' }
+        valueAsOf: { type: string, format: date }
+        revaluationCadenceDays: { type: integer, minimum: 1, maximum: 3650 }
+
+    InsightSeverity:
+      type: string
+      enum: [INFO, WARN, CRITICAL]
+    InsightStatus:
+      type: string
+      enum: [ACTIVE, DISMISSED, SUPERSEDED]
+
+    Insight:
+      type: object
+      required: [id, ruleId, severity, status, message, raisedAt]
+      properties:
+        id: { type: string, format: uuid }
+        ruleId: { type: string, example: LOW_EMERGENCY_FUND, description: "Stable id of the rule that raised it; the UI may key copy or icons on it." }
+        severity: { $ref: '#/components/schemas/InsightSeverity' }
+        status: { $ref: '#/components/schemas/InsightStatus' }
+        message: { type: string, description: "Ready-to-show text." }
+        evidence: { type: object, additionalProperties: true, description: "The numbers behind the finding. Shape depends on `ruleId`." }
+        raisedAt: { type: string, format: date-time }
+        dismissedAt: { type: string, format: date-time, description: "Absent unless dismissed." }
+        rulesetVersion: { type: string, example: '2026.1', description: "Absent on rows raised before versions were stamped." }
+
+    InsightPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required: [content]
+          properties:
+            content:
+              type: array
+              items: { $ref: '#/components/schemas/Insight' }
+
+    # ---- Ingestion
+    ConsentStatus:
+      type: string
+      enum: [REQUESTED, ACTIVE, PAUSED, REVOKED, EXPIRED]
+    FetchStatus:
+      type: string
+      enum: [PENDING, RUNNING, COMPLETED, FAILED]
+
+    CreateConsentRequest:
+      type: object
+      required: [aaHandle, dataRangeFrom, dataRangeTo]
+      properties:
+        aaHandle: { type: string, maxLength: 120, example: someone@onemoney }
+        fipList: { type: array, maxItems: 50, items: { type: string, maxLength: 80 }, description: Providers to cover; omit for all. }
+        dataRangeFrom: { type: string, format: date }
+        dataRangeTo: { type: string, format: date, description: Must not precede `dataRangeFrom` (`422 INVALID_DATA_RANGE`). }
+        frequency: { type: string, maxLength: 30, example: 1/DAY }
+
+    ActivateConsentRequest:
+      type: object
+      required: [consentId]
+      properties:
+        consentId: { type: string, maxLength: 200, description: The consent artefact id the aggregator issued on approval. }
+
+    TriggerFetchRequest:
+      type: object
+      properties:
+        from: { type: string, format: date, description: Defaults to the consent's start. }
+        to: { type: string, format: date, description: Defaults to the consent's end. }
+
+    Consent:
+      type: object
+      required: [id, aaHandle, fipList, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        aaHandle: { type: string }
+        fipList: { type: array, items: { type: string } }
+        status: { $ref: '#/components/schemas/ConsentStatus' }
+        dataRangeFrom: { type: string, format: date }
+        dataRangeTo: { type: string, format: date }
+        frequency: { type: string }
+        expiresAt: { type: string, format: date-time, description: Absent until the consent is activated. }
+        createdAt: { type: string, format: date-time }
+
+    ConsentPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required: [content]
+          properties:
+            content:
+              type: array
+              items: { $ref: '#/components/schemas/Consent' }
+
+    NormalisationSummary:
+      type: object
+      required: [id, status, producedEvents, unmapped, ranAt]
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, example: COMPLETED }
+        producedEvents: { type: integer, minimum: 0, description: Normalised events published to the other modules. }
+        unmapped:
+          type: object
+          additionalProperties: { type: integer }
+          description: Counts of anything not mapped, by reason (for example `UNSUPPORTED_MUTUAL_FUND`, `INVALID_TRANSACTION`, `MALFORMED_PAYLOAD`).
+        ranAt: { type: string, format: date-time }
+
+    FetchSession:
+      type: object
+      required: [id, consentId, status, fiTypes, requestedAt]
+      properties:
+        id: { type: string, format: uuid }
+        consentId: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/FetchStatus' }
+        fiTypes: { type: array, items: { type: string }, description: Financial-information types the fetch returned. }
+        requestedAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time, description: Absent while running. }
+        error: { type: string, description: Short reason; present only when `FAILED`. }
+        normalisation: { $ref: '#/components/schemas/NormalisationSummary' }
+
+    FetchSessionPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required: [content]
+          properties:
+            content:
+              type: array
+              items: { $ref: '#/components/schemas/FetchSession' }
 
     # ---------------------------------------------------------------- portfolio
     AssetClass:

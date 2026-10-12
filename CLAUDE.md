@@ -86,7 +86,8 @@ src/main/java/com/rohit/nyvra/
   accounts/ income/ expense/
                        entities + repositories (V2–V4); no services/controllers yet
   portfolio/           instruments, manual quotes, holdings CRUD, summary/allocation (V6 tables)
-  ingestion/ networth/ aggregator/ analytics/
+  analytics/           health score (calculator + GET /health-score[/history]) and insights (GET /insights, dismiss)
+  ingestion/ networth/ aggregator/
                        module placeholders (package-info) — build out per DOMAIN_MODEL.md
 src/main/resources/
   application.yml + application-{local,dev,staging,prod}.yml

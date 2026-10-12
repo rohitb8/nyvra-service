@@ -10,7 +10,7 @@
 // TimescaleDB hypertables). Full prose column/index spec: docs/engineering/DATABASE_DESIGN.md.
 //
 // Migration numbers: Flyway applies versions strictly in order, so a version is assigned only when its
-// migration is actually written (never reserved ahead). Applied: V1 User, V2 Accounts, V3 Income,
+// migration is actually written (never reserved ahead). Applied: V1 User, V2 Accounts, V3 Income, V11–V13 Net Worth/Analytics/Ingestion,
 // V4 Expenses (+ V4.1 category seed). Everything else is "proposed" without a number yet.
 //
 // Convention note: enums below are DBML sugar for readability in the diagram. The real Postgres
@@ -522,7 +522,7 @@ Table valuation_snapshot {
 }
 
 //// ==========================================================================
-//// Net Worth — proposed. Downstream of Accounts/Income/Portfolio/Expenses.
+//// Net Worth — V11, applied. Downstream of Accounts/Income/Portfolio/Expenses.
 //// ==========================================================================
 
 Table net_worth_snapshot {
@@ -538,7 +538,7 @@ Table net_worth_snapshot {
     (user_id, as_of) [pk]
   }
 
-  Note: 'V6. Hypertable from creation, 30-day chunks. At most one row per (user, as_of date); event-driven recompute + a guaranteed daily job so trends have no gaps.'
+  Note: 'V11. Hypertable from creation, 30-day chunks. At most one row per (user, as_of date); event-driven recompute + a guaranteed daily job so trends have no gaps.'
 }
 
 Table manual_asset_liability {
@@ -547,20 +547,23 @@ Table manual_asset_liability {
   kind al_kind [not null]
   class manual_asset_class [not null]
   label text
-  value decimal(19,2) [not null]
+  value decimal(19,2) [not null, note: 'CHECK (value >= 0)']
+  currency char(3) [not null, default: 'INR']
   value_as_of date [not null]
   revaluation_cadence interval
   deleted_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
 
   indexes {
     (user_id) [name: 'idx_manual_asset_liability_user']
   }
 
-  Note: 'Proposed. Flagged STALE in the app once revaluation_cadence has elapsed since value_as_of.'
+  Note: 'V11. Flagged STALE in the app once revaluation_cadence has elapsed since value_as_of.'
 }
 
 //// ==========================================================================
-//// Analytics + Health Score — proposed. Downstream of everything above.
+//// Analytics + Health Score — V12, applied. Downstream of everything above.
 //// ==========================================================================
 
 Table health_score {
@@ -576,7 +579,7 @@ Table health_score {
     (user_id, as_of) [pk]
   }
 
-  Note: 'Proposed. Hypertable from creation, 90-day chunks. Implements HEALTH_SCORE_SPEC.md — this table stores the output, never invents the formula.'
+  Note: 'V12. Hypertable from creation, 90-day chunks. Implements HEALTH_SCORE_SPEC.md — this table stores the output, never invents the formula.'
 }
 
 Table insight {
@@ -594,7 +597,7 @@ Table insight {
     (user_id, raised_at) [name: 'idx_insight_user_raised']
   }
 
-  Note: 'Proposed. No duplicate active insight per rule_id — superseded on change.'
+  Note: 'V12. No duplicate active insight per rule_id — superseded on change.'
 }
 
 Table dashboard_summary_cache {
@@ -602,11 +605,11 @@ Table dashboard_summary_cache {
   payload jsonb
   computed_at timestamptz [not null, default: `now()`]
 
-  Note: 'Proposed. Redis is primary; this is the durable rebuild source only.'
+  Note: 'V12. Redis is primary; this is the durable rebuild source only.'
 }
 
 //// ==========================================================================
-//// Ingestion — proposed. Feeds Accounts/Income/Portfolio/Expenses via
+//// Ingestion — V13, applied. Feeds Accounts/Income/Portfolio/Expenses via
 //// published EVENTS, not foreign keys — see ARCHITECTURE.md's module rules.
 //// ==========================================================================
 
@@ -630,7 +633,7 @@ Table aggregator_consent {
     (expires_at) [name: 'idx_aggregator_consent_expires_active']
   }
 
-  Note: 'Proposed. State machine: REQUESTED -> ACTIVE -> (PAUSED <-> ACTIVE) -> REVOKED|EXPIRED. No fetch unless ACTIVE.'
+  Note: 'V13. State machine: REQUESTED -> ACTIVE -> (PAUSED <-> ACTIVE) -> REVOKED|EXPIRED. No fetch unless ACTIVE.'
 }
 
 Table fetch_session {
@@ -648,7 +651,7 @@ Table fetch_session {
     (consent_id, requested_at) [name: 'idx_fetch_session_consent_requested']
   }
 
-  Note: 'Proposed. Idempotent per (consentId, dataRange); retried with backoff.'
+  Note: 'V13. Idempotent per (consentId, dataRange); retried with backoff.'
 }
 
 Table raw_financial_record {
@@ -666,7 +669,7 @@ Table raw_financial_record {
     (purge_after) [name: 'idx_raw_financial_record_purge']
   }
 
-  Note: 'Proposed. Hard-deleted by a scheduled job once purge_after < today AND normalisation succeeded.'
+  Note: 'V13. Hard-deleted by a scheduled job once purge_after < today AND normalisation succeeded.'
 }
 
 Table normalisation_run {
@@ -677,5 +680,5 @@ Table normalisation_run {
   status text
   created_at timestamptz [not null, default: `now()`]
 
-  Note: 'Proposed. Deterministic + re-runnable — downstream dedup keys prevent double-counting.'
+  Note: 'V13. Deterministic + re-runnable — downstream dedup keys prevent double-counting.'
 }
