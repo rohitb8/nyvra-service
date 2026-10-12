@@ -4,8 +4,9 @@ import java.io.IOException;
 import java.io.InputStream;
 
 /**
- * Port for the object store that holds payslip files. The database keeps only the returned key, so a
- * different backend (MinIO/S3) can replace {@link LocalPayslipStorage} without touching the service.
+ * Port for the object store that holds payslip files. The database keeps only the returned key, so the
+ * backend is swappable: {@link LocalPayslipStorage} for development and tests, {@link S3PayslipStorage} for
+ * MinIO/S3.
  */
 public interface PayslipStorage {
 
@@ -18,6 +19,15 @@ public interface PayslipStorage {
      * @throws IOException if the file cannot be written
      */
     void put(String key, InputStream content, String contentType) throws IOException;
+
+    /**
+     * Opens a stored file for reading.
+     *
+     * @param key the object key
+     * @return a stream over the file bytes; the caller closes it
+     * @throws IOException if the file does not exist or cannot be read
+     */
+    InputStream open(String key) throws IOException;
 
     /**
      * Removes a file; a key that does not exist is ignored.

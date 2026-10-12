@@ -7,14 +7,17 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
  * {@link PayslipStorage} backed by a directory on the local disk, used for local development and tests.
  * The directory comes from {@code nyvra.income.payslip-storage-dir} (default: a folder under the JVM's
- * temp directory). Production should supply an S3/MinIO implementation instead.
+ * temp directory). Active unless {@code nyvra.income.payslip-storage.type} is {@code s3}, which selects
+ * {@link S3PayslipStorage}.
  */
 @Component
+@ConditionalOnProperty(name = "nyvra.income.payslip-storage.type", havingValue = "local", matchIfMissing = true)
 public class LocalPayslipStorage implements PayslipStorage {
 
     /** Directory every object is stored under. */
@@ -35,6 +38,11 @@ public class LocalPayslipStorage implements PayslipStorage {
         Path target = resolve(key);
         Files.createDirectories(target.getParent());
         Files.copy(content, target, StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    @Override
+    public InputStream open(String key) throws IOException {
+        return Files.newInputStream(resolve(key));
     }
 
     @Override

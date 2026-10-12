@@ -2,6 +2,7 @@ package com.rohit.nyvra.common.idempotency;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -18,6 +19,7 @@ import jakarta.servlet.ServletInputStream;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletRequestWrapper;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.Part;
 import org.slf4j.MDC;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -42,8 +44,10 @@ import org.springframework.web.util.ContentCachingResponseWrapper;
  * <p>Like the other cross-cutting filters it is instantiated directly (not a {@code @Component}) and
  * registered in {@code SecurityConfig} right after the authentication filters, because it needs the
  * resolved caller and runs before MVC dispatch, so errors are written here rather than by
- * {@code GlobalExceptionHandler}. Multipart bodies are not buffered; their hash covers method, URI,
- * content type and length instead.
+ * {@code GlobalExceptionHandler}. Multipart bodies are not buffered; their hash covers method, URI and each
+ * part's name, file name, type and content (read through the container's already-parsed parts), so the same
+ * key with a different file is a mismatch. If the parts cannot be read the hash falls back to the content
+ * type and length, and the request itself reports the problem.
  */
 public class IdempotencyFilter extends OncePerRequestFilter {
 
@@ -109,8 +113,7 @@ public class IdempotencyFilter extends OncePerRequestFilter {
         HttpServletRequest effective = request;
         String requestHash;
         if (isMultipart(request)) {
-            requestHash = sha256(request.getMethod(), request.getRequestURI(), request.getQueryString(),
-                request.getContentType(), String.valueOf(request.getContentLengthLong()));
+            requestHash = multipartHash(request);
         } else {
             byte[] body = request.getInputStream().readAllBytes();
             effective = new CachedBodyRequest(request, body);
@@ -177,6 +180,39 @@ public class IdempotencyFilter extends OncePerRequestFilter {
         response.setStatus(status.value());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         objectMapper.writeValue(response.getWriter(), body);
+    }
+
+    /**
+     * Hashes a multipart request over its parts' content. The container caches the parsed parts, so reading
+     * them here does not stop MVC from reading them again.
+     */
+    private static String multipartHash(HttpServletRequest request) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            update(digest, request.getMethod(), request.getRequestURI(), request.getQueryString());
+            for (Part part : request.getParts()) {
+                update(digest, part.getName(), part.getSubmittedFileName(), part.getContentType(),
+                    String.valueOf(part.getSize()));
+                try (InputStream in = part.getInputStream()) {
+                    digest.update(in.readAllBytes());
+                }
+                digest.update((byte) 0);
+            }
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (IOException | ServletException | IllegalStateException e) {
+            return sha256(request.getMethod(), request.getRequestURI(), request.getQueryString(),
+                request.getContentType(), String.valueOf(request.getContentLengthLong()));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is always available", e);
+        }
+    }
+
+    /** Feeds the strings into the digest, each followed by a separator byte. */
+    private static void update(MessageDigest digest, String... parts) {
+        for (String part : parts) {
+            digest.update((part == null ? "" : part).getBytes(StandardCharsets.UTF_8));
+            digest.update((byte) 0);
+        }
     }
 
     /** Whether the request body is multipart (not safe to pre-read, see class Javadoc). */
