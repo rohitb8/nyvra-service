@@ -90,7 +90,7 @@ class HealthScoreIntegrationTest extends AbstractIntegrationTest {
             .andExpect(jsonPath("$.subScores.savings.evaluated").value(false))
             .andExpect(jsonPath("$.subScores.savings.value").doesNotExist())
             .andExpect(jsonPath("$.subScores.savings.weight").value(0.25))
-            .andExpect(jsonPath("$.rulesetVersion").value("2026.1"));
+            .andExpect(jsonPath("$.rulesetVersion").value("2026.2"));
     }
 
     /** A recorded score is served back with its sub-scores, drivers, versions and confidence level. */

@@ -22,10 +22,12 @@ import com.rohit.nyvra.goals.Goal;
 import com.rohit.nyvra.goals.GoalContribution;
 import com.rohit.nyvra.income.IncomeEntry;
 import com.rohit.nyvra.portfolio.PortfolioHolding;
+import com.rohit.nyvra.user.UserProfile;
 
 /**
  * Marks a user's health score stale whenever something it depends on is written: income entries,
- * expenses, accounts, portfolio holdings, goals and goal contributions. Listening at the persistence layer,
+ * expenses, accounts, portfolio holdings, goals and goal contributions, or when the user's profile changes (the
+ * date of birth sets the equity target). A new profile is not marked: it holds no data to score yet. Listening at the persistence layer,
  * as net worth does, means those modules need no hooks and every write path (API, ingestion, jobs) is
  * covered. It only records "dirty"; the recompute happens later in {@link HealthScoreRecomputer#flushDue},
  * after the debounce period, so it never runs inside the caller's transaction.
@@ -71,12 +73,16 @@ public class HealthScoreChangeListener
     }
 
     /**
-     * Marks the owner of an updated entity.
+     * Marks the owner of an updated entity, or the user themselves when their profile changed.
      *
      * @param event the update event
      */
     @Override
     public void onPostUpdate(PostUpdateEvent event) {
+        if (event.getEntity() instanceof UserProfile profile) {
+            recomputer.markDirty(profile.getId());
+            return;
+        }
         touch(event.getEntity());
     }
 

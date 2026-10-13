@@ -1,5 +1,7 @@
 package com.rohit.nyvra.user;
 
+import java.time.LocalDate;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
@@ -37,6 +39,10 @@ public class UserProfile extends AbstractEntity {
     /** Display name from the token's {@code name} claim; may be {@code null}. */
     @Column(name = "display_name")
     private String displayName;
+
+    /** Date of birth, used for age-based rules such as the equity glide path; {@code null} when not given. */
+    @Column(name = "date_of_birth")
+    private LocalDate dateOfBirth;
 
     // @Column's columnDefinition only affects DDL generation, not schema *validation* — Hibernate
     // validates against the mapped JDBC type, which defaults to VARCHAR for a String. The migration
@@ -105,6 +111,20 @@ public class UserProfile extends AbstractEntity {
      */
     public void setDisplayName(String displayName) {
         this.displayName = displayName;
+    }
+
+    /** @return the date of birth, or {@code null} when the user has not given one */
+    public LocalDate getDateOfBirth() {
+        return dateOfBirth;
+    }
+
+    /**
+     * Sets or clears the date of birth. Range checks belong to {@link UserProfileService}.
+     *
+     * @param dateOfBirth the new date of birth, or {@code null} to clear it
+     */
+    public void setDateOfBirth(LocalDate dateOfBirth) {
+        this.dateOfBirth = dateOfBirth;
     }
 
     /** @return the ISO-4217 base currency code */

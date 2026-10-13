@@ -45,10 +45,10 @@ public record HealthScoreInputRules(
 
     /**
      * The equity-allocation target (FINANCIAL_RULES section 4.1) and the drift bands that cost diversification
-     * points (HEALTH_SCORE_SPEC section 3.5). The user's age is not stored yet, so {@code assumedAge} stands in
-     * for it until it is captured.
+     * points (HEALTH_SCORE_SPEC section 3.5). {@code assumedAge} stands in for the user's age when no date of
+     * birth is stored.
      *
-     * @param assumedAge            age used for the glide path while the user's real age is unknown
+     * @param assumedAge            age used for the glide path when the user has no stored date of birth
      * @param glideBase             the glide path is {@code glideBase - age}
      * @param glideMinPct           lowest base equity percentage on the glide path
      * @param glideMaxPct           highest base equity percentage on the glide path

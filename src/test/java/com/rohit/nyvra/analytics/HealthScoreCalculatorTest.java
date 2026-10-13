@@ -74,7 +74,7 @@ class HealthScoreCalculatorTest {
         assertThat(r.subScores().get(SubScoreKey.DIVERSIFICATION).effectiveWeight()).isEqualByComparingTo("0.158");
         assertThat(r.subScores().get(SubScoreKey.GOAL_PROGRESS).evaluated()).isFalse();
         assertThat(r.subScores().get(SubScoreKey.GOAL_PROGRESS).value()).isNull();
-        assertThat(r.rulesetVersion()).isEqualTo("2026.1");
+        assertThat(r.rulesetVersion()).isEqualTo("2026.2");
         assertThat(r.scoreSpecVersion()).isEqualTo("2026.1");
     }
 

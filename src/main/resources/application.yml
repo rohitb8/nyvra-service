@@ -100,7 +100,7 @@ nyvra:
   # FINANCIAL_RULES.md §8 / HEALTH_SCORE_SPEC.md parameters. Changing a value that alters user-visible
   # scores requires bumping ruleset-version.
   financial-rules:
-    ruleset-version: "2026.1"
+    ruleset-version: "2026.2"
     score-spec-version: "2026.1"
     min-evaluated-sub-scores: 3
     weights:
@@ -167,8 +167,8 @@ nyvra:
     single-stock-warn-penalty: 10
     single-stock-critical-penalty: 25
     single-stock-max-penalty: 25
-    # FINANCIAL_RULES.md §4.1 glide path and HEALTH_SCORE_SPEC.md §3.5 drift penalties. The user's age is not
-    # stored yet, so assumed-age stands in for it until it is captured.
+    # FINANCIAL_RULES.md §4.1 glide path and HEALTH_SCORE_SPEC.md §3.5 drift penalties. assumed-age is used
+    # only when the user has no stored date of birth.
     allocation:
       assumed-age: 35
       glide-base: 100

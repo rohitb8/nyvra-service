@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.Period;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
@@ -278,11 +279,12 @@ public class DriverMetricsAssembler {
         }
 
         UserPreferencesReader.ScorePreferences prefs = preferences.scorePreferences(userId);
+        Integer ageYears = prefs.dateOfBirth() == null ? null : Period.between(prefs.dateOfBirth(), today).getYears();
         int historyDays = earliest == null ? 0 : (int) ChronoUnit.DAYS.between(earliest, today);
         return new DriverFacts(incomeNet, incomeEntryCount, spendMonths.size(), spend, essential, discretionary,
             debtRepayment, burnMonths.size(), burn, liquidKnown, liquid, variable, !open.isEmpty(), liabilities,
             cardOutstanding, cardLimit, portfolioValue.currentValue(userId).amount(), open2.size(), equity, stocks,
             goalRatios, maxStale, historyDays, unclassified, prefs.riskBand(),
-            prefs.emergencyFundMonthsTarget());
+            prefs.emergencyFundMonthsTarget(), ageYears);
     }
 }

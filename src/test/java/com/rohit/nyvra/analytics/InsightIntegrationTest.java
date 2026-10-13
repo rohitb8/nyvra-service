@@ -67,7 +67,7 @@ class InsightIntegrationTest extends AbstractIntegrationTest {
         InsightResponse again = service.raise(user.getId(), "LOW_EMERGENCY_FUND", InsightSeverity.WARN,
             "Your emergency fund covers 4 months.", Map.of("months", 4));
         assertThat(again.id()).isEqualTo(first.id());
-        assertThat(first.rulesetVersion()).isEqualTo("2026.1");
+        assertThat(first.rulesetVersion()).isEqualTo("2026.2");
 
         InsightResponse changed = service.raise(user.getId(), "LOW_EMERGENCY_FUND", InsightSeverity.CRITICAL,
             "Your emergency fund covers 2 months.", Map.of("months", 2));
