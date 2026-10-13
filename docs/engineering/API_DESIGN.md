@@ -130,7 +130,7 @@ microcopy; `message` stays a safe English fallback). It's additive to the existi
 | 403 | `FORBIDDEN` | role missing (not used for ownership — see §1) | — |
 | 404 | `NOT_FOUND` | unknown id or another user's resource | — |
 | 409 | `CONFLICT` | state conflicts | `SOURCE_READ_ONLY`, `ACCOUNT_CLOSED`, `IDEMPOTENCY_KEY_REUSED`, `CATEGORY_IN_USE`, `ALREADY_SPLIT` |
-| 422 | `UNPROCESSABLE` | well-formed but violates a domain invariant | `INCOME_PERIOD_OVERLAP`, `NET_EXCEEDS_GROSS`, `EXPECTED_AMOUNT_REQUIRED`, `SPLIT_SUM_MISMATCH`, `UNSUPPORTED_CURRENCY`, `SYSTEM_CATEGORY_IMMUTABLE` |
+| 422 | `UNPROCESSABLE` | well-formed but violates a domain invariant | `INCOME_PERIOD_OVERLAP`, `NET_EXCEEDS_GROSS`, `EXPECTED_AMOUNT_REQUIRED`, `SPLIT_SUM_MISMATCH`, `UNSUPPORTED_CURRENCY`, `SYSTEM_CATEGORY_IMMUTABLE`, `INVALID_DATE_OF_BIRTH` |
 | 413 | `PAYLOAD_TOO_LARGE` | payslip over the size limit | — |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` | payslip not PDF/PNG/JPEG | — |
 | 429 | `RATE_LIMITED` | per-user rate limit (Phase 7); `Retry-After` header set | — |
@@ -363,11 +363,16 @@ today in `Asia/Kolkata`. Archived goals are ignored by the health score and acce
 Each section comes from its own module. A section that fails to load is left out and named in `unavailable`;
 the rest is still returned with `200`.
 
+### User (`user` module)
+
+| Method | Path | What | Notes |
+|---|---|---|---|
+| GET | `/users/me` | the caller's profile | created on first call; includes `dateOfBirth` once set |
+| PUT | `/users/me/date-of-birth` | set or clear date of birth | body `{dateOfBirth}` (`null` clears); feeds the health score's age-based equity target (35 assumed when unset) and queues a score recompute; `422 INVALID_DATE_OF_BIRTH` if in the future or over 120 years ago |
+
 ### Out of this draft (later passes)
 
-Trends, and the
-rest of `/users/me` (profile/preferences/consents/export/deletion). `GET /users/me` is in the spec
-because it already ships.
+Trends, and the rest of `/users/me` (preferences/consents/export/deletion).
 
 ---
 
