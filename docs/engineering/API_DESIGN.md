@@ -302,13 +302,19 @@ Design notes:
 | GET | `/portfolio/instruments` | search the shared catalogue | `?q=` (symbol/name/ISIN) `&assetClass=`; paged |
 | POST | `/portfolio/instruments` | add an instrument | needs `isin` or `symbol`; `409 INSTRUMENT_ISIN_EXISTS` |
 | GET | `/portfolio/instruments/{id}` | one instrument | |
-| POST | `/portfolio/instruments/{id}/quotes` | record a price | manual until a feed exists; shared by all users; `422 QUOTE_IN_FUTURE` |
+| POST | `/portfolio/instruments/{id}/quotes` | record a price | **ADMIN only** (`403` otherwise); shared by all users; `422 QUOTE_IN_FUTURE` |
 | GET | `/portfolio/holdings` | list holdings | `?assetClass=&includeClosed=`; sort `openedAt`/`assetClass`/`createdAt`; each row carries its valuation |
 | POST | `/portfolio/holdings` | record a holding | origin `MANUAL`; `409 HOLDING_ALREADY_EXISTS`, `422 UNSUPPORTED_CURRENCY` |
 | GET | `/portfolio/holdings/{id}` | one holding | |
 | PATCH | `/portfolio/holdings/{id}` | change quantity / average cost | quantity `0` closes, positive reopens; `409 HOLDING_READ_ONLY` for non-manual |
 | DELETE | `/portfolio/holdings/{id}` | delete | hard delete, manual holdings only |
 | GET | `/portfolio/summary` | totals + allocation by asset class | server-computed, open INR holdings only |
+| GET | `/portfolio/returns` | annualised return (XIRR) | portfolio and per holding; `xirrPct` omitted when undefined; counts say how many holdings were included |
+| GET | `/portfolio/valuation-history` | portfolio value over time | `?from=&to=&interval=DAILY\|WEEKLY\|MONTHLY`; `400` for an inverted range or over 400 points |
+| GET | `/portfolio/fx-rates` | FX rates against INR | `?currency=` (required) `&from=&to=` |
+| POST | `/portfolio/fx-rates` | set an FX rate | **ADMIN only**; `422 RATE_IN_FUTURE` |
+| GET | `/portfolio/fx-rates/convert` | convert an amount | `?amount=&from=&to=&date=`; `422 FX_RATE_UNAVAILABLE` |
+| POST | `/portfolio/price-feed/sync` | pull prices and FX rates from the feed | **ADMIN only**; returns counts stored |
 
 Decisions taken for this slice:
 
@@ -323,15 +329,43 @@ Decisions taken for this slice:
    `excludedHoldingCount` but not valued until FX exists.
 4. **One open holding per instrument per user.** Account linkage (`account_id`) is not in the API
    yet: `portfolio` and `accounts` are peer modules, so the link waits for the event path.
-5. **XIRR, drift against targets and valuation history** are not here: they need cash-flow records
-   and the price feed. `valuation_snapshot` stays unused for now.
-6. **Instruments and quotes are shared reference data.** Any signed-in user can add an instrument or
-   record a manual price, which then affects every user's valuation. That is acceptable only until a
-   price feed and an admin path replace it (see §10).
+5. **XIRR and valuation history** are served by `/portfolio/returns` and `/portfolio/valuation-history`.
+   Drift against targets is not here (it lives in the health score).
+6. **Instruments and quotes are shared reference data.** Any signed-in user can add an instrument, but
+   price and FX-rate writes and the price-feed sync need the `ADMIN` realm role, because they affect every
+   user's valuation. The feed is a stub today.
+7. **Money in other currencies** is converted through `/portfolio/fx-rates/convert`; rates are decimal
+   strings with at most 6 decimals and `source` says where each came from.
+
+### Goals (`goals` module)
+
+| Method | Path | Purpose | Notes |
+|---|---|---|---|
+| GET | `/goals` | list goals | `?status=` (repeatable); sort `name`/`targetDate`/`createdAt`, default `targetDate,asc`; each row carries its progress |
+| POST | `/goals` | create a goal | `422 UNSUPPORTED_CURRENCY`, `GOAL_DATES_INVALID`, `GOAL_TARGET_DATE_IN_PAST` |
+| GET | `/goals/{id}` | one goal | |
+| PATCH | `/goals/{id}` | update a goal | omitted fields unchanged; start date and currency are fixed at creation; `422 GOAL_DATES_INVALID` |
+| DELETE | `/goals/{id}` | delete | removes its contributions too; set `status=ARCHIVED` to keep history |
+| GET | `/goals/{id}/contributions` | list contributions | sort `contributedOn`/`createdAt`, default `contributedOn,desc` |
+| POST | `/goals/{id}/contributions` | add a contribution | `409 GOAL_ARCHIVED`, `422 UNSUPPORTED_CURRENCY`, `CONTRIBUTION_DATE_IN_FUTURE` |
+| DELETE | `/goals/{id}/contributions/{contributionId}` | delete a contribution | |
+
+Progress (`allocated`, `requiredToDate`, `remaining`, `percentComplete`, `progressRatio`, `daysRemaining`,
+`onTrack`, `achieved`) is computed server-side as straight-line accrual from start date to target date, as of
+today in `Asia/Kolkata`. Archived goals are ignored by the health score and accept no contributions.
+
+### Dashboard (`dashboard`)
+
+| Method | Path | Purpose | Notes |
+|---|---|---|---|
+| GET | `/dashboard/summary` | everything the home screen needs in one call | net worth, portfolio, health score, goals (active count and up to three upcoming), income, spending |
+
+Each section comes from its own module. A section that fails to load is left out and named in `unavailable`;
+the rest is still returned with `200`.
 
 ### Out of this draft (later passes)
 
-Dashboard summary, trends, goals, aggregator/consents, and the
+Trends, and the
 rest of `/users/me` (profile/preferences/consents/export/deletion). `GET /users/me` is in the spec
 because it already ships.
 
@@ -358,6 +392,6 @@ because it already ships.
 6. **Manual transactions.** `transaction.source` allows `MANUAL`, but this draft has no
    `POST /transactions`: manual cash spending is entered as a manual *expense*, and manual
    accounts only carry a balance. Confirm that's enough for v1.
-7. **Who may write instruments and quotes?** The portfolio slice lets any signed-in user add an
-   instrument and record a manual price, and both are shared by every user. Before real multi-user
-   use, restrict writes to a price feed / admin role, or make manual prices per-user.
+7. **Who may write instruments and quotes?** *Partly resolved*: price, FX-rate and price-feed writes are
+   `ADMIN` only. Any signed-in user can still add an instrument to the shared catalogue; decide whether
+   that should be restricted too before real multi-user use.
