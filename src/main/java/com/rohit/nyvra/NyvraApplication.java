@@ -15,6 +15,11 @@ import org.springframework.modulith.Modulithic;
 @SpringBootApplication
 public class NyvraApplication {
 
+    /**
+     * Starts the application.
+     *
+     * @param args command-line arguments
+     */
     public static void main(String[] args) {
         SpringApplication.run(NyvraApplication.class, args);
     }

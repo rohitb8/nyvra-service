@@ -15,14 +15,19 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 /** Verifies {@link UserIdMdcFilter} puts the JWT subject — never email/name — into MDC. */
 class UserIdMdcFilterTest {
 
+    /** Filter under test. */
     private final UserIdMdcFilter filter = new UserIdMdcFilter();
 
+    /** Clears the security context and MDC so tests do not leak state. */
     @AfterEach
     void cleanUp() {
         SecurityContextHolder.clearContext();
         MDC.clear();
     }
 
+    /**
+     * With a JWT carrying subject, email and name, only the subject reaches MDC, and MDC is cleared after the chain.
+     */
     @Test
     void putsSubjectNotEmailOrNameIntoMdc() throws Exception {
         Jwt jwt = Jwt.withTokenValue("token-value")
@@ -50,6 +55,7 @@ class UserIdMdcFilterTest {
         assertThat(MDC.get("userId")).as("MDC must be cleared once the request completes").isNull();
     }
 
+    /** Without authentication no {@code userId} is put in MDC. */
     @Test
     void noOpWhenUnauthenticated() throws Exception {
         filter.doFilter(new MockHttpServletRequest(), new MockHttpServletResponse(),

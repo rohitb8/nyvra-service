@@ -38,12 +38,32 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 @SecurityRequirement(name = "keycloak")
 public class ExpenseController {
 
+    /** Expense use cases. */
     private final ExpenseService service;
 
+    /**
+     * Creates the controller.
+     *
+     * @param service expense use cases
+     */
     public ExpenseController(ExpenseService service) {
         this.service = service;
     }
 
+    /**
+     * Lists expenses, newest first, cursor-paginated.
+     *
+     * @param month      calendar month ({@code yyyy-MM}); exclusive with {@code from}/{@code to}
+     * @param from       earliest date, inclusive
+     * @param to         latest date, inclusive
+     * @param categoryId match category or subcategory
+     * @param necessity  match any of these necessities
+     * @param origin     match one origin
+     * @param q          merchant substring, at most 100 characters
+     * @param cursor     opaque cursor from the previous page
+     * @param limit      page size between 1 and 200 (default 50)
+     * @return one page of expenses with the next cursor
+     */
     @GetMapping
     @Operation(summary = "List expenses",
         description = "Newest first. Cursor-paginated. Pass either `month` or `from`/`to`. Split parents carry their `splits`.")
@@ -60,6 +80,12 @@ public class ExpenseController {
         return service.list(month, from, to, categoryId, necessity, origin, q, cursor, limit);
     }
 
+    /**
+     * Records a manual expense.
+     *
+     * @param request the new expense
+     * @return 201 with the expense and its {@code Location}
+     */
     @PostMapping
     @Operation(summary = "Record a manual expense")
     public ResponseEntity<ExpenseResponse> create(@Valid @RequestBody CreateExpenseRequest request) {
@@ -69,12 +95,25 @@ public class ExpenseController {
             .body(created);
     }
 
+    /**
+     * Returns one expense.
+     *
+     * @param expenseId the expense id
+     * @return the expense
+     */
     @GetMapping("/{expenseId}")
     @Operation(summary = "Get one expense")
     public ExpenseResponse get(@PathVariable UUID expenseId) {
         return service.get(expenseId);
     }
 
+    /**
+     * Recategorises or edits an expense; omitted fields are unchanged.
+     *
+     * @param expenseId the expense id
+     * @param request   the fields to change
+     * @return the updated expense
+     */
     @PatchMapping("/{expenseId}")
     @Operation(summary = "Recategorise or edit an expense",
         description = "Amount and date only on MANUAL expenses (`409 SOURCE_READ_ONLY` otherwise).")
@@ -82,6 +121,11 @@ public class ExpenseController {
         return service.update(expenseId, request);
     }
 
+    /**
+     * Deletes a manual expense and any split parts.
+     *
+     * @param expenseId the expense id
+     */
     @DeleteMapping("/{expenseId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Delete a manual expense")
@@ -89,6 +133,13 @@ public class ExpenseController {
         service.delete(expenseId);
     }
 
+    /**
+     * Splits an expense into 2 to 20 parts that sum exactly to it.
+     *
+     * @param expenseId the expense id
+     * @param request   the parts
+     * @return the parent expense with its splits
+     */
     @PostMapping("/{expenseId}/split")
     @Operation(summary = "Split an expense",
         description = "2–20 parts summing exactly to the expense (`422 SPLIT_SUM_MISMATCH`); already split → `409 ALREADY_SPLIT`.")
@@ -96,6 +147,12 @@ public class ExpenseController {
         return service.split(expenseId, request);
     }
 
+    /**
+     * Undoes a split; idempotent.
+     *
+     * @param expenseId the parent expense id
+     * @return the parent expense without splits
+     */
     @DeleteMapping("/{expenseId}/split")
     @Operation(summary = "Undo a split")
     public ExpenseResponse unsplit(@PathVariable UUID expenseId) {

@@ -15,6 +15,7 @@ import org.springframework.modulith.core.ApplicationModules;
  */
 class ArchitectureTest {
 
+    /** The Spring Modulith model builds and every module has a name. */
     @Test
     void modularityModelBuilds() {
         ApplicationModules modules = ApplicationModules.of(NyvraApplication.class);

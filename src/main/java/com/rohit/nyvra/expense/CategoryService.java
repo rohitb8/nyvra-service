@@ -161,6 +161,7 @@ public class CategoryService {
         categories.delete(category);
     }
 
+    /** The categories the user can see (system plus own custom), keyed by id. */
     private Map<UUID, Category> visibleById(UUID userId) {
         return categories.findVisibleTo(userId).stream().collect(Collectors.toMap(Category::getId, Function.identity()));
     }
@@ -177,6 +178,11 @@ public class CategoryService {
         return category;
     }
 
+    /**
+     * Strips a name.
+     *
+     * @throws BadRequestException if it is null or blank
+     */
     private static String cleanName(String raw) {
         String name = raw == null ? "" : raw.strip();
         if (name.isEmpty()) {
@@ -195,6 +201,7 @@ public class CategoryService {
         }
     }
 
+    /** Builds a tree node for the category with its children (sorted by name) recursively. */
     private static CategoryResponse node(Category category, Map<UUID, List<Category>> byParent) {
         List<CategoryResponse> children = byParent.getOrDefault(category.getId(), List.of()).stream()
             .sorted(Comparator.comparing(Category::getName))

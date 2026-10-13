@@ -23,12 +23,25 @@ public class MonthlyPartitions {
     /** Allow-list: the function takes a regclass, but nothing outside these tables should reach it. */
     static final Set<String> PARTITIONED_TABLES = Set.of("transaction", "expense");
 
+    /** JDBC access used to call the SQL function. */
     private final JdbcTemplate jdbcTemplate;
 
+    /**
+     * Creates the component.
+     *
+     * @param jdbcTemplate JDBC template for the SQL function call
+     */
     public MonthlyPartitions(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }
 
+    /**
+     * Ensures the partition covering one month exists, creating it if needed.
+     *
+     * @param table partitioned table name; must be {@code transaction} or {@code expense}
+     * @param month the calendar month to cover (UTC month boundaries)
+     * @throws IllegalArgumentException if the table is not an allowed partitioned table
+     */
     @Transactional
     public void ensureMonth(String table, YearMonth month) {
         if (!PARTITIONED_TABLES.contains(table)) {
@@ -38,7 +51,15 @@ public class MonthlyPartitions {
             "SELECT ensure_monthly_partition(?::regclass, ?)::text", String.class, table, month.atDay(1));
     }
 
-    /** Ensures every month from {@code from} to {@code to}, inclusive. */
+    /**
+     * Ensures every month from {@code from} to {@code to}, inclusive.
+     *
+     *
+     * @param table partitioned table name; must be {@code transaction} or {@code expense}
+     * @param from first date, its month is the first ensured
+     * @param to last date, its month is the last ensured
+     * @throws IllegalArgumentException if the table is not an allowed partitioned table
+     */
     @Transactional
     public void ensureRange(String table, LocalDate from, LocalDate to) {
         for (YearMonth month = YearMonth.from(from); !month.isAfter(YearMonth.from(to)); month = month.plusMonths(1)) {

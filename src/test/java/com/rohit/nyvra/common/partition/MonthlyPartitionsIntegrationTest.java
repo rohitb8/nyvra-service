@@ -23,23 +23,30 @@ import com.rohit.nyvra.user.UserProfile;
 import com.rohit.nyvra.user.UserProfileMother;
 import com.rohit.nyvra.user.UserProfileRepository;
 
+/** Integration tests for {@link MonthlyPartitions} against a real PostgreSQL (Testcontainers). */
 class MonthlyPartitionsIntegrationTest extends AbstractIntegrationTest {
 
+    /** Component under test. */
     @Autowired
     private MonthlyPartitions partitions;
 
+    /** Used to create the owning user of test data. */
     @Autowired
     private UserProfileRepository users;
 
+    /** Used to create the owning account of test data. */
     @Autowired
     private FinancialAccountRepository accounts;
 
+    /** Used to insert a transaction into the partitioned table. */
     @Autowired
     private AccountTransactionRepository transactions;
 
+    /** Used for catalog queries about partitions. */
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    /** After migrations, partitions exist for the current month and three months ahead. */
     @Test
     void migrationsPreCreateTheCurrentMonthAndAFewAhead() {
         YearMonth now = YearMonth.now();
@@ -49,6 +56,10 @@ class MonthlyPartitionsIntegrationTest extends AbstractIntegrationTest {
         assertThat(partitionExists("expense_" + suffix(now.plusMonths(3)))).isTrue();
     }
 
+    /**
+     * A row dated in an uncovered month sits in the default partition until that month's partition is
+     * created, then moves.
+     */
     @Test
     void movesRowsOutOfTheDefaultPartitionWhenTheirMonthIsCreated() {
         // A month nobody else touches, so this test owns its partition.
@@ -62,6 +73,7 @@ class MonthlyPartitionsIntegrationTest extends AbstractIntegrationTest {
         assertThat(transactions.findById(row.getId())).isPresent();
     }
 
+    /** Ensuring the same month twice does not fail and leaves the partition in place. */
     @Test
     void isIdempotent() {
         YearMonth month = YearMonth.of(2004, 7);
@@ -72,12 +84,21 @@ class MonthlyPartitionsIntegrationTest extends AbstractIntegrationTest {
         assertThat(partitionExists("expense_2004_07")).isTrue();
     }
 
+    /**
+     * A table that is not {@code transaction} or {@code expense} is rejected with {@link IllegalArgumentException}.
+     */
     @Test
     void refusesTablesOutsideTheAllowList() {
         assertThatThrownBy(() -> partitions.ensureMonth("user_profile", YearMonth.now()))
             .isInstanceOf(IllegalArgumentException.class);
     }
 
+    /**
+     * Builds an unsaved transaction (scale-2 INR, manual source) for a freshly saved user and account.
+     *
+     * @param valueDate the booking and value date, which decides the target partition
+     * @return a new transaction dated {@code valueDate}
+     */
     private AccountTransaction aTransaction(LocalDate valueDate) {
         UserProfile user = users.save(UserProfileMother.aUserProfile());
         FinancialAccount account = accounts.save(new FinancialAccount(user.getId(), AccountType.SAVINGS,
@@ -86,15 +107,33 @@ class MonthlyPartitionsIntegrationTest extends AbstractIntegrationTest {
             "narration", null, null, RecordSource.MANUAL, "dedup-" + account.getId());
     }
 
+    /**
+     * Looks up which physical partition a row lives in.
+     *
+     * @param row a saved transaction
+     * @return the partition table name, for example {@code transaction_default}
+     */
     private String partitionOf(AccountTransaction row) {
         return jdbcTemplate.queryForObject(
             "SELECT tableoid::regclass::text FROM transaction WHERE id = ?", String.class, row.getId());
     }
 
+    /**
+     * Checks the catalog for a table.
+     *
+     * @param name table name
+     * @return {@code true} if the table exists
+     */
     private boolean partitionExists(String name) {
         return jdbcTemplate.queryForObject("SELECT to_regclass(?) IS NOT NULL", Boolean.class, name);
     }
 
+    /**
+     * Formats a month as a partition-name suffix.
+     *
+     * @param month the month
+     * @return {@code yyyy_MM}, for example {@code 2026_10}
+     */
     private static String suffix(YearMonth month) {
         return "%d_%02d".formatted(month.getYear(), month.getMonthValue());
     }

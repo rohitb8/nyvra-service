@@ -181,14 +181,17 @@ public class CategorisationRuleService {
         rules.delete(owned(userId, id));
     }
 
+    /** Loads one of the caller's own rules; 404 if missing, someone else's, or a system rule. */
     private CategorisationRule owned(UUID userId, UUID id) {
         return rules.findByIdAndUserId(id, userId).orElseThrow(() -> ResourceNotFoundException.of("Categorisation rule", id));
     }
 
+    /** The categories the user can see (system plus own custom), keyed by id. */
     private Map<UUID, Category> visibleById(UUID userId) {
         return categories.findVisibleTo(userId).stream().collect(Collectors.toMap(Category::getId, Function.identity()));
     }
 
+    /** Rejects (404) a category id the user cannot see. */
     private static void requireCategory(Map<UUID, Category> visible, UUID categoryId) {
         if (!visible.containsKey(categoryId)) {
             throw ResourceNotFoundException.of("Category", categoryId);
@@ -206,6 +209,7 @@ public class CategorisationRuleService {
         }
     }
 
+    /** Maps a rule to its response, resolving the target category from the visible set. */
     private static CategorisationRuleResponse toResponse(CategorisationRule rule, Map<UUID, Category> visible) {
         return CategorisationRuleResponse.from(rule, CategoryRef.from(visible.get(rule.getCategoryId())));
     }

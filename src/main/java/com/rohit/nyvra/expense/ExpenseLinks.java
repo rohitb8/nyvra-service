@@ -16,13 +16,25 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ExpenseLinks {
 
+    /** Expense persistence. */
     private final ExpenseRepository expenses;
 
+    /**
+     * Creates the lookup.
+     *
+     * @param expenses expense persistence
+     */
     public ExpenseLinks(ExpenseRepository expenses) {
         this.expenses = expenses;
     }
 
-    /** @return transaction id → expense id, only for transactions the user has an expense for */
+    /**
+     * Finds the expense derived from each of the given transactions.
+     *
+     * @param userId         the owner; other users' expenses are never returned
+     * @param transactionIds the transaction ids to look up (may be empty)
+     * @return transaction id → expense id, only for transactions the user has an expense for
+     */
     @Transactional(readOnly = true)
     public Map<UUID, UUID> expenseIdsByTransactionId(UUID userId, Collection<UUID> transactionIds) {
         Map<UUID, UUID> links = new HashMap<>();

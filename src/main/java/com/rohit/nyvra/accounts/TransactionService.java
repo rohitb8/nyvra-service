@@ -27,13 +27,26 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class TransactionService {
 
+    /** Feed order: value date then id, both descending (matches the cursor). */
     private static final Sort NEWEST_FIRST = Sort.by(Sort.Order.desc("valueDate"), Sort.Order.desc("id"));
 
+    /** Ledger rows. */
     private final AccountTransactionRepository transactions;
+    /** Used to verify account ownership. */
     private final FinancialAccountRepository accounts;
+    /** Looks up the expense linked to each transaction. */
     private final ExpenseLinks expenseLinks;
+    /** Resolves the signed-in user. */
     private final CurrentUserService currentUser;
 
+    /**
+     * Creates the service.
+     *
+     * @param transactions ledger repository
+     * @param accounts account repository
+     * @param expenseLinks expense link lookup
+     * @param currentUser current-user resolver
+     */
     public TransactionService(AccountTransactionRepository transactions, FinancialAccountRepository accounts,
                               ExpenseLinks expenseLinks, CurrentUserService currentUser) {
         this.transactions = transactions;
@@ -103,6 +116,13 @@ public class TransactionService {
         return list(List.of(accountId), from, to, direction, cursor, limit);
     }
 
+    /**
+     * Returns one of the caller's transactions.
+     *
+     * @param id transaction id
+     * @return the transaction with its linked expense id, if any
+     * @throws ResourceNotFoundException if absent or owned by someone else
+     */
     @Transactional(readOnly = true)
     public TransactionResponse get(UUID id) {
         UUID userId = currentUser.currentUser().getId();

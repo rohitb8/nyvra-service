@@ -24,9 +24,20 @@ import org.springframework.web.filter.OncePerRequestFilter;
  */
 public class CorrelationIdFilter extends OncePerRequestFilter {
 
+    /** Request and response header carrying the correlation id. */
     static final String HEADER = "X-Request-Id";
+    /** MDC key under which the correlation id is exposed to logging. */
     static final String MDC_KEY = "traceId";
 
+    /**
+     * Sets the MDC trace id (reusing {@code X-Request-Id} if present), echoes it, and clears it afterwards.
+     *
+     * @param request the incoming request
+     * @param response the response, which gets the {@code X-Request-Id} header
+     * @param chain the rest of the filter chain
+     * @throws ServletException if the chain fails
+     * @throws IOException if the chain fails on I/O
+     */
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {

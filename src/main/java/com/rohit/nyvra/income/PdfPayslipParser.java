@@ -89,6 +89,11 @@ public class PdfPayslipParser implements PayslipParser {
         }
     }
 
+    /**
+     * Extracts employer, pay period, gross, net and deductions from a PDF payslip.
+     *
+     * {@inheritDoc}
+     */
     @Override
     public Optional<PayslipResponse.ParsedFields> parse(InputStream content, String contentType)
             throws IOException {

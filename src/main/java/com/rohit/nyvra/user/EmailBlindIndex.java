@@ -7,6 +7,7 @@ import com.rohit.nyvra.common.crypto.BlindIndexHasher;
 /** Single place that normalises an email before blind-indexing, so writes and lookups agree. */
 final class EmailBlindIndex {
 
+    /** Not instantiable. */
     private EmailBlindIndex() {
     }
 

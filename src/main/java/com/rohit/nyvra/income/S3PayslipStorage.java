@@ -37,6 +37,11 @@ public class S3PayslipStorage implements PayslipStorage {
         this.bucket = bucket;
     }
 
+    /**
+     * Uploads the content to the bucket as an object named by the key (streamed, size unknown up front).
+     *
+     * {@inheritDoc}
+     */
     @Override
     public void put(String key, InputStream content, String contentType) throws IOException {
         try {
@@ -47,6 +52,11 @@ public class S3PayslipStorage implements PayslipStorage {
         }
     }
 
+    /**
+     * Opens the bucket object stored under the key for reading.
+     *
+     * {@inheritDoc}
+     */
     @Override
     public InputStream open(String key) throws IOException {
         try {
@@ -56,6 +66,11 @@ public class S3PayslipStorage implements PayslipStorage {
         }
     }
 
+    /**
+     * Removes the bucket object stored under the key.
+     *
+     * {@inheritDoc}
+     */
     @Override
     public void delete(String key) throws IOException {
         try {

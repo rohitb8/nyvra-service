@@ -18,12 +18,15 @@ import com.rohit.nyvra.user.UserProfileRepository;
 /** Exercises the V6 Portfolio DDL directly — the module has no entities or repositories yet. */
 class PortfolioSchemaIntegrationTest extends AbstractIntegrationTest {
 
+    /** Raw SQL access, since these tests target the DDL rather than entities. */
     @Autowired
     private JdbcTemplate jdbc;
 
+    /** Used to create the owning user of holdings and snapshots. */
     @Autowired
     private UserProfileRepository users;
 
+    /** {@code price_quote} and {@code valuation_snapshot} are registered as TimescaleDB hypertables. */
     @Test
     void priceQuoteAndValuationSnapshotAreHypertables() {
         var hypertables = jdbc.queryForList(
@@ -31,6 +34,7 @@ class PortfolioSchemaIntegrationTest extends AbstractIntegrationTest {
         assertThat(hypertables).contains("price_quote", "valuation_snapshot");
     }
 
+    /** A scale-6 price round-trips exactly, and a negative price violates a check constraint. */
     @Test
     void storesPricesAndRejectsDuplicatesAndNegatives() {
         UUID instrument = anInstrument("INE002A01018");
@@ -44,6 +48,10 @@ class PortfolioSchemaIntegrationTest extends AbstractIntegrationTest {
             instrument)).isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    /**
+     * A holding with positive quantity cannot have {@code closed_at}, a negative quantity is rejected,
+     * and zero quantity may be closed.
+     */
     @Test
     void holdingMustHaveZeroQuantityToBeClosed() {
         UserProfile user = users.save(UserProfileMother.aUserProfile());
@@ -57,6 +65,7 @@ class PortfolioSchemaIntegrationTest extends AbstractIntegrationTest {
         insertHolding(user.getId(), instrument, "10.5", "NULL");
     }
 
+    /** A second corporate action of the same instrument, type and ex-date is rejected. */
     @Test
     void corporateActionsAreUniquePerInstrumentTypeAndDate() {
         UUID instrument = anInstrument("INE040A01034");
@@ -68,6 +77,7 @@ class PortfolioSchemaIntegrationTest extends AbstractIntegrationTest {
             .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    /** A second snapshot for the same user and instant is rejected. */
     @Test
     void valuationSnapshotIsKeyedByUserAndTime() {
         UserProfile user = users.save(UserProfileMother.aUserProfile());
@@ -79,6 +89,12 @@ class PortfolioSchemaIntegrationTest extends AbstractIntegrationTest {
             .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    /**
+     * Inserts an INR equity instrument with the given ISIN.
+     *
+     * @param isin the ISIN, unique per instrument
+     * @return the new instrument id
+     */
     private UUID anInstrument(String isin) {
         UUID id = UUID.randomUUID();
         jdbc.update("INSERT INTO instrument (id, isin, symbol, name, asset_class, currency, country) "
@@ -86,6 +102,14 @@ class PortfolioSchemaIntegrationTest extends AbstractIntegrationTest {
         return id;
     }
 
+    /**
+     * Inserts an INR manual equity holding row; the SQL fragments are spliced in unescaped (test data only).
+     *
+     * @param userId owner
+     * @param instrumentId held instrument
+     * @param quantity SQL numeric literal for the quantity
+     * @param closedAt SQL expression for {@code closed_at}, for example {@code now()} or {@code NULL}
+     */
     private void insertHolding(UUID userId, UUID instrumentId, String quantity, String closedAt) {
         jdbc.update("INSERT INTO portfolio_holding (id, user_id, instrument_id, asset_class, quantity, currency, source, closed_at) "
             + "VALUES (?, ?, ?, 'EQUITY', " + quantity + ", 'INR', 'MANUAL', " + closedAt + ")",

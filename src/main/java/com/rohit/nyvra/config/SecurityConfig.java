@@ -107,7 +107,12 @@ public class SecurityConfig {
         return converter;
     }
 
-    /** Pulls the realm roles out of the token as {@code ROLE_*} authorities. */
+    /**
+     * Pulls the realm roles out of the token as {@code ROLE_*} authorities.
+     *
+     * @param jwt the validated token
+     * @return upper-cased, de-duplicated authorities; empty if the token has no realm roles
+     */
     @SuppressWarnings("unchecked")
     private static Collection<GrantedAuthority> extractAuthorities(Jwt jwt) {
         var realmAccess = jwt.getClaimAsMap("realm_access");

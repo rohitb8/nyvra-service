@@ -14,17 +14,35 @@ import jakarta.persistence.Converter;
 @Converter
 public class EncryptedStringConverter implements AttributeConverter<String, byte[]> {
 
+    /** Encryptor applied to every converted value. */
     private final FieldEncryptor encryptor;
 
+    /**
+     * Creates the converter.
+     *
+     * @param encryptor the field encryptor bean
+     */
     public EncryptedStringConverter(FieldEncryptor encryptor) {
         this.encryptor = encryptor;
     }
 
+    /**
+     * Encrypts the attribute for storage.
+     *
+     * @param attribute the plaintext, may be {@code null}
+     * @return the encrypted bytes, or {@code null} when the attribute is {@code null}
+     */
     @Override
     public byte[] convertToDatabaseColumn(String attribute) {
         return attribute == null ? null : encryptor.encrypt(attribute);
     }
 
+    /**
+     * Decrypts the stored bytes.
+     *
+     * @param dbData the encrypted bytes, may be {@code null}
+     * @return the plaintext, or {@code null} when the column is {@code null}
+     */
     @Override
     public String convertToEntityAttribute(byte[] dbData) {
         return dbData == null ? null : encryptor.decrypt(dbData);

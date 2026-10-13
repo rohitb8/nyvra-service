@@ -23,6 +23,11 @@ import org.springframework.security.oauth2.jwt.JwtException;
 @TestConfiguration
 public class TestSecurityConfig {
 
+    /**
+     * Stub decoder that rejects every token, so no real decoding or network call happens.
+     *
+     * @return a decoder that always throws {@link JwtException}
+     */
     @Bean
     JwtDecoder jwtDecoder() {
         return token -> {

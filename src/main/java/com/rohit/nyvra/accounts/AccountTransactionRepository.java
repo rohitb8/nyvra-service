@@ -15,13 +15,44 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 public interface AccountTransactionRepository
         extends JpaRepository<AccountTransaction, UUID>, JpaSpecificationExecutor<AccountTransaction> {
 
+    /**
+     * All of a user's lines, newest first.
+     *
+     * @param userId owner
+     * @param pageable page request
+     * @return a page of lines
+     */
     Page<AccountTransaction> findByUserIdOrderByValueDateDescIdDesc(UUID userId, Pageable pageable);
 
+    /**
+     * A user's lines in a value-date range, newest first.
+     *
+     * @param userId owner
+     * @param from inclusive start date
+     * @param to inclusive end date
+     * @param pageable page request
+     * @return a page of lines
+     */
     Page<AccountTransaction> findByUserIdAndValueDateBetweenOrderByValueDateDescIdDesc(
         UUID userId, LocalDate from, LocalDate to, Pageable pageable);
 
+    /**
+     * One account's lines for a user, newest first.
+     *
+     * @param accountId account id
+     * @param userId owner
+     * @param pageable page request
+     * @return a page of lines
+     */
     Page<AccountTransaction> findByAccountIdAndUserIdOrderByValueDateDescIdDesc(
         UUID accountId, UUID userId, Pageable pageable);
 
+    /**
+     * Duplicate check for imports.
+     *
+     * @param dedupKey deduplication key
+     * @param valueDate value date (keeps the partition prune)
+     * @return true if such a line exists
+     */
     boolean existsByDedupKeyAndValueDate(String dedupKey, LocalDate valueDate);
 }

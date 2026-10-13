@@ -8,13 +8,25 @@ import java.util.UUID;
  */
 public final class UserProfileMother {
 
+    /** Not instantiable. */
     private UserProfileMother() {
     }
 
+    /**
+     * Builds a profile with a random subject.
+     *
+     * @return an unsaved profile
+     */
     public static UserProfile aUserProfile() {
         return aUserProfile("test-subject-" + UUID.randomUUID());
     }
 
+    /**
+     * Builds a profile for the given subject, with a derived email and blind index.
+     *
+     * @param keycloakSubject token {@code sub}
+     * @return an unsaved profile
+     */
     public static UserProfile aUserProfile(String keycloakSubject) {
         return new UserProfile(keycloakSubject, keycloakSubject + "@nyvra.local", "hash-" + keycloakSubject, "Test User");
     }

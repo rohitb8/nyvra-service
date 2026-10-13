@@ -22,6 +22,12 @@ import net.javacrumbs.shedlock.spring.annotation.EnableSchedulerLock;
 @ConditionalOnProperty(name = "nyvra.jobs.enabled", havingValue = "true")
 public class SchedulingConfig {
 
+    /**
+     * Database-backed lock provider; uses DB time so nodes with skewed clocks agree.
+     *
+     * @param dataSource application data source holding the {@code shedlock} table
+     * @return the ShedLock provider
+     */
     @Bean
     LockProvider lockProvider(DataSource dataSource) {
         return new JdbcTemplateLockProvider(JdbcTemplateLockProvider.Configuration.builder()
