@@ -33,37 +33,67 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
+/**
+ * Exercises the read-only ledger endpoints: keyset paging, filters, ownership scoping, the linked-expense id
+ * and input validation.
+ */
 @AutoConfigureMockMvc
 class TransactionControllerIntegrationTest extends AbstractIntegrationTest {
 
+    /** January 2024, the base month for seeded rows. */
     private static final LocalDate JAN = LocalDate.of(2024, 1, 1);
+    /** February 2024. */
     private static final LocalDate FEB = LocalDate.of(2024, 2, 1);
 
+    /** Sends requests through the real filter chain. */
     @Autowired
     private MockMvc mockMvc;
 
+    /** User persistence. */
     @Autowired
     private UserProfileRepository users;
 
+    /** Account persistence. */
     @Autowired
     private FinancialAccountRepository accounts;
 
+    /** Ledger persistence. */
     @Autowired
     private AccountTransactionRepository transactions;
 
+    /** Creates the monthly partitions the inserts need. */
     @Autowired
     private MonthlyPartitions partitions;
 
+    /** Used to seed an expense linked to a transaction. */
     @Autowired
     private ExpenseRepository expenses;
 
+    /**
+     * A seeded user and account.
+     *
+     * @param subject token subject of the user
+     * @param user the user profile
+     * @param account the user's savings account
+     */
     private record Seed(String subject, UserProfile user, FinancialAccount account) {
     }
 
+    /**
+     * Authenticates a request as the given Keycloak subject.
+     *
+     * @param subject token {@code sub}
+     * @return the JWT post-processor
+     */
     private static RequestPostProcessor as(String subject) {
         return jwt().jwt(jwt -> jwt.subject(subject));
     }
 
+    /**
+     * Saves a user with one aggregator-sourced savings account.
+     *
+     * @return the seed
+     */
     private Seed seedUser() {
         UserProfile user = users.save(UserProfileMother.aUserProfile());
         FinancialAccount account = accounts.save(new FinancialAccount(
@@ -72,6 +102,15 @@ class TransactionControllerIntegrationTest extends AbstractIntegrationTest {
         return new Seed(user.getKeycloakSubject(), user, account);
     }
 
+    /**
+     * Saves one transaction on the seed's account.
+     *
+     * @param seed user and account
+     * @param date value and booking date
+     * @param amount signed INR amount
+     * @param narration narration text
+     * @return the saved transaction
+     */
     private AccountTransaction add(Seed seed, LocalDate date, String amount, String narration) {
         partitions.ensureRange("transaction", JAN, FEB.plusMonths(1));
         return transactions.save(new AccountTransaction(
@@ -79,6 +118,11 @@ class TransactionControllerIntegrationTest extends AbstractIntegrationTest {
             null, RecordSource.AA, "k-" + UUID.randomUUID()));
     }
 
+    /**
+     * 25 rows read 10 at a time come back newest first in 3 pages with no gaps or repeats.
+     *
+     * @throws Exception on request failure
+     */
     @Test
     void pagesNewestFirstWithAnOpaqueCursorAndNoGapsOrRepeats() throws Exception {
         Seed seed = seedUser();
@@ -111,6 +155,11 @@ class TransactionControllerIntegrationTest extends AbstractIntegrationTest {
         org.assertj.core.api.Assertions.assertThat(dates).isSortedAccordingTo(java.util.Comparator.reverseOrder());
     }
 
+    /**
+     * A feed that fits one page has no next cursor and reports the default limit of 50.
+     *
+     * @throws Exception on request failure
+     */
     @Test
     void lastPageHasNoNextCursor() throws Exception {
         Seed seed = seedUser();
@@ -125,6 +174,11 @@ class TransactionControllerIntegrationTest extends AbstractIntegrationTest {
             .andExpect(jsonPath("$.content[0].direction", equalTo("CREDIT")));
     }
 
+    /**
+     * The from, to and direction filters narrow the feed.
+     *
+     * @throws Exception on request failure
+     */
     @Test
     void filtersByDateRangeAndDirection() throws Exception {
         Seed seed = seedUser();
@@ -142,6 +196,12 @@ class TransactionControllerIntegrationTest extends AbstractIntegrationTest {
             .andExpect(jsonPath("$.content[0].narration", equalTo("feb credit")));
     }
 
+    /**
+     * The per-account feed shows only that account (404 for another user's) and the global feed never leaks
+     * other users' rows.
+     *
+     * @throws Exception on request failure
+     */
     @Test
     void perAccountFeedOnlyShowsThatAccountAnd404sForSomeoneElses() throws Exception {
         Seed mine = seedUser();
@@ -161,6 +221,11 @@ class TransactionControllerIntegrationTest extends AbstractIntegrationTest {
             .andExpect(jsonPath("$.content", hasSize(0)));
     }
 
+    /**
+     * A transaction is readable by its owner and a 404 for anyone else.
+     *
+     * @throws Exception on request failure
+     */
     @Test
     void getsOneTransactionAndHidesOthers() throws Exception {
         Seed mine = seedUser();
@@ -177,6 +242,11 @@ class TransactionControllerIntegrationTest extends AbstractIntegrationTest {
             .andExpect(status().isNotFound());
     }
 
+    /**
+     * A transaction carries the id of its derived expense in single reads and in the feed.
+     *
+     * @throws Exception on request failure
+     */
     @Test
     void exposesTheExpenseDerivedFromATransaction() throws Exception {
         Seed seed = seedUser();
@@ -197,6 +267,12 @@ class TransactionControllerIntegrationTest extends AbstractIntegrationTest {
             .andExpect(jsonPath("$.content[?(@.narration=='tea')].expenseId").isEmpty());
     }
 
+    /**
+     * Out-of-range limit, bad date, inverted range, garbage cursor and a cursor reused with different filters
+     * are 400.
+     *
+     * @throws Exception on request failure
+     */
     @Test
     void rejectsBadInputWith400() throws Exception {
         Seed seed = seedUser();
@@ -223,6 +299,11 @@ class TransactionControllerIntegrationTest extends AbstractIntegrationTest {
             .andExpect(status().isBadRequest());
     }
 
+    /**
+     * An unauthenticated request is rejected with 401.
+     *
+     * @throws Exception on request failure
+     */
     @Test
     void requiresAuthentication() throws Exception {
         mockMvc.perform(get("/api/v1/transactions")).andExpect(status().isUnauthorized());

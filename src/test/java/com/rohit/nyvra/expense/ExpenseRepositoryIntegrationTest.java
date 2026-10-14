@@ -22,29 +22,40 @@ import com.rohit.nyvra.user.UserProfile;
 import com.rohit.nyvra.user.UserProfileMother;
 import com.rohit.nyvra.user.UserProfileRepository;
 
+/**
+ * Integration tests of the expense module's repositories and schema constraints against a real Postgres: the seeded
+ * category tree, per-user category visibility, rule ordering, split storage and the spending snapshot round trip.
+ */
 class ExpenseRepositoryIntegrationTest extends AbstractIntegrationTest {
 
-    /** "Food & dining" and its "Groceries" child — fixed ids from V4.1__seed_categories.sql. */
+    /** "Food and dining" and its "Groceries" child — fixed ids from V4.1__seed_categories.sql. */
     private static final UUID FOOD = UUID.fromString("40a8ed3d-45f2-50fe-8806-e94e6a8eb931");
 
+    /** User persistence, used to create owners. */
     @Autowired
     private UserProfileRepository users;
 
+    /** Category persistence under test. */
     @Autowired
     private CategoryRepository categories;
 
+    /** Categorisation rule persistence under test. */
     @Autowired
     private CategorisationRuleRepository rules;
 
+    /** Expense persistence under test. */
     @Autowired
     private ExpenseRepository expenses;
 
+    /** Spending snapshot persistence under test. */
     @Autowired
     private SpendingHabitSnapshotRepository snapshots;
 
+    /** Raw SQL access for assertions and constraint probes. */
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    /** The seeded "Food and dining" category is a system category with exactly three system children. */
     @Test
     void seedsTheSystemCategoryTree() {
         Category food = categories.findById(FOOD).orElseThrow();
@@ -55,6 +66,7 @@ class ExpenseRepositoryIntegrationTest extends AbstractIntegrationTest {
             "SELECT count(*) FROM category WHERE parent_id = ? AND system", Integer.class, FOOD)).isEqualTo(3);
     }
 
+    /** A custom category is visible to its owner only; every user still sees the system tree. */
     @Test
     void showsEachUserOnlyTheSystemTreeAndTheirOwnCustomCategories() {
         UserProfile alice = users.save(UserProfileMother.aUserProfile());
@@ -67,6 +79,7 @@ class ExpenseRepositoryIntegrationTest extends AbstractIntegrationTest {
             .contains("Food & dining", "Groceries");
     }
 
+    /** The database rejects two custom categories with the same name under the same parent for one user. */
     @Test
     void rejectsADuplicateCustomCategoryUnderTheSameParent() {
         UserProfile user = users.save(UserProfileMother.aUserProfile());
@@ -77,6 +90,7 @@ class ExpenseRepositoryIntegrationTest extends AbstractIntegrationTest {
             .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    /** A user rule is evaluated before a system rule even when the system rule has a higher priority. */
     @Test
     void ordersUserRulesBeforeSystemRules() {
         UserProfile user = users.save(UserProfileMother.aUserProfile());
@@ -92,6 +106,7 @@ class ExpenseRepositoryIntegrationTest extends AbstractIntegrationTest {
             .containsSubsequence(mine.getId(), system.getId());
     }
 
+    /** Split parts are stored on the parent's date with SPLIT origin and the month query counts parent plus parts. */
     @Test
     void storesSplitsOnTheirParentsDateAndPagesByMonth() {
         UserProfile user = users.save(UserProfileMother.aUserProfile());
@@ -109,6 +124,7 @@ class ExpenseRepositoryIntegrationTest extends AbstractIntegrationTest {
             .isEqualTo(3);
     }
 
+    /** The composite parent foreign key rejects a split part dated differently from its parent. */
     @Test
     void rejectsASplitWhoseParentIsOnAnotherDate() {
         UserProfile user = users.save(UserProfileMother.aUserProfile());
@@ -123,6 +139,7 @@ class ExpenseRepositoryIntegrationTest extends AbstractIntegrationTest {
             .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    /** A spending snapshot is saved and reloaded by user and month with its category shares and total intact. */
     @Test
     void roundTripsAMonthlySpendingSnapshot() {
         UserProfile user = users.save(UserProfileMother.aUserProfile());

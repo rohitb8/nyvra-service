@@ -32,6 +32,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 @Component
 public class RuleBackfill {
 
+    /** Class logger. */
     private static final Logger log = LoggerFactory.getLogger(RuleBackfill.class);
 
     /** Candidates read per round trip. */
@@ -117,6 +118,13 @@ public class RuleBackfill {
         return changed;
     }
 
+    /**
+     * Finds which expenses in a batch are split parents (have at least one child part).
+     *
+     * @param userId the owner
+     * @param batch  the candidate expenses
+     * @return the ids of the batch members that have children; empty for an empty batch
+     */
     private Set<UUID> splitParentsIn(UUID userId, List<Expense> batch) {
         if (batch.isEmpty()) {
             return Set.of();

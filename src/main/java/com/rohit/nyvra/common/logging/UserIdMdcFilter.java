@@ -24,8 +24,18 @@ import org.springframework.web.filter.OncePerRequestFilter;
  */
 public class UserIdMdcFilter extends OncePerRequestFilter {
 
+    /** MDC key under which the caller id (JWT subject) is exposed to logging. */
     static final String MDC_KEY = "userId";
 
+    /**
+     * Puts the JWT subject in MDC for JWT-authenticated requests and clears it afterwards.
+     *
+     * @param request the incoming request
+     * @param response the response
+     * @param chain the rest of the filter chain
+     * @throws ServletException if the chain fails
+     * @throws IOException if the chain fails on I/O
+     */
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {

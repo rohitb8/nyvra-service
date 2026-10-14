@@ -172,6 +172,11 @@ public class Expense extends AbstractEntity {
         this.categorySource = CategorySource.AUTO;
     }
 
+    /**
+     * Sets category, subcategory and necessity together.
+     *
+     * @throws NullPointerException if {@code categoryId} or {@code necessity} is null
+     */
     private void applyCategory(UUID categoryId, UUID subcategoryId, Necessity necessity) {
         this.categoryId = Objects.requireNonNull(categoryId, "categoryId");
         this.subcategoryId = subcategoryId;

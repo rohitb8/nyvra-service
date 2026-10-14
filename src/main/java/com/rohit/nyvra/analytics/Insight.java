@@ -157,11 +157,13 @@ public class Insight implements Persistable<UUID> {
         return severity == newSeverity && message.equals(newMessage) && Objects.equals(evidence, newEvidence);
     }
 
+    /** @return the insight id (application-generated UUID) */
     @Override
     public UUID getId() {
         return id;
     }
 
+    /** @return {@code true} until the row has been persisted, so Spring Data issues an insert */
     @Override
     public boolean isNew() {
         return isNew;

@@ -12,6 +12,11 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class JacksonConfig {
 
+    /**
+     * Writes dates as ISO-8601 strings and leaves null properties out.
+     *
+     * @return the customizer applied to the shared {@code ObjectMapper} builder
+     */
     @Bean
     Jackson2ObjectMapperBuilderCustomizer jsonCustomizer() {
         return builder -> builder

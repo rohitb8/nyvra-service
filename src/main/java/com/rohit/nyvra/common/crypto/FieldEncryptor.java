@@ -22,15 +22,28 @@ import javax.crypto.spec.SecretKeySpec;
  */
 public class FieldEncryptor {
 
+    /** Format version byte written at the start of every stored value. */
     private static final byte FORMAT_V1 = 1;
+    /** GCM initialisation vector length in bytes (96 bits, random per value). */
     private static final int IV_LENGTH_BYTES = 12;
+    /** GCM authentication tag length in bits. */
     private static final int TAG_LENGTH_BITS = 128;
+    /** JCA transformation string for AES-GCM. */
     private static final String TRANSFORMATION = "AES/GCM/NoPadding";
 
+    /** Key used for all encryption (and tried first for decryption). */
     private final SecretKey currentKey;
+    /** Keys tried in order when decrypting: current first, then the previous key if configured. */
     private final List<SecretKey> decryptionKeys;
+    /** Source of per-value random IVs. */
     private final SecureRandom random = new SecureRandom();
 
+    /**
+     * Creates an encryptor from raw key bytes.
+     *
+     * @param currentKey 32-byte AES key for encryption and decryption
+     * @param previousKey optional 32-byte former key, decrypt-only; {@code null} when not rotating
+     */
     public FieldEncryptor(byte[] currentKey, byte[] previousKey) {
         this.currentKey = new SecretKeySpec(currentKey, "AES");
         List<SecretKey> keys = new ArrayList<>();
@@ -41,6 +54,13 @@ public class FieldEncryptor {
         this.decryptionKeys = List.copyOf(keys);
     }
 
+    /**
+     * Builds an encryptor from the bound crypto properties.
+     *
+     * @param properties bound {@code nyvra.crypto} properties
+     * @return an encryptor with the current and optional previous key
+     * @throws IllegalStateException if a configured key is missing, not base64, or not 32 bytes
+     */
     public static FieldEncryptor from(CryptoProperties properties) {
         String previous = properties.fieldEncryptionKeyPrevious();
         return new FieldEncryptor(
@@ -50,6 +70,13 @@ public class FieldEncryptor {
                 : CryptoKeys.decode(previous, "NYVRA_FIELD_ENCRYPTION_KEY_PREVIOUS"));
     }
 
+    /**
+     * Encrypts a value with the current key and a fresh random IV.
+     *
+     * @param plaintext the value to protect
+     * @return {@code [version][IV][ciphertext+tag]}
+     * @throws IllegalStateException if the cipher fails
+     */
     public byte[] encrypt(String plaintext) {
         byte[] iv = new byte[IV_LENGTH_BYTES];
         random.nextBytes(iv);
@@ -67,6 +94,13 @@ public class FieldEncryptor {
         }
     }
 
+    /**
+     * Decrypts a stored value, trying the current key and then the previous key.
+     *
+     * @param stored bytes previously produced by {@link #encrypt(String)}
+     * @return the original plaintext
+     * @throws IllegalStateException if the format is unrecognised or no configured key authenticates the value
+     */
     public String decrypt(byte[] stored) {
         if (stored.length < 1 + IV_LENGTH_BYTES || stored[0] != FORMAT_V1) {
             throw new IllegalStateException("Unrecognised encrypted field format");

@@ -33,39 +33,59 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
+/**
+ * End-to-end tests of the {@code /api/v1/expenses} endpoints through MockMvc against a real Postgres: create, list
+ * and filter with cursors, get, patch, delete, split and unsplit, including validation, ownership and error codes.
+ */
 @AutoConfigureMockMvc
 class ExpenseControllerIntegrationTest extends AbstractIntegrationTest {
 
-    /** Seeded in V4.1: "Food & dining" (ESSENTIAL) and its children. */
+    /** Seeded in V4.1: "Food and dining" (ESSENTIAL) and its children. */
     private static final UUID FOOD = UUID.fromString("40a8ed3d-45f2-50fe-8806-e94e6a8eb931");
+    /** "Groceries", a child of {@link #FOOD}; default necessity ESSENTIAL. */
     private static final UUID GROCERIES = UUID.fromString("566d0670-1558-5400-b5d1-5889e0dd8af9");
+    /** "Dining out", a child of {@link #FOOD}; default necessity DISCRETIONARY. */
     private static final UUID DINING_OUT = UUID.fromString("afaf6ba2-b9c8-5100-acdc-1336f5cc1fdd");
+    /** "Shopping", a separate top-level system category. */
     private static final UUID SHOPPING = UUID.fromString("777df330-9c34-5d70-856b-cc533d7b77f6");
 
+    /** MockMvc used to call the API. */
     @Autowired
     private MockMvc mockMvc;
 
+    /** User persistence, used to create owners. */
     @Autowired
     private UserProfileRepository users;
 
+    /** Expense persistence, for seeding and verifying stored rows. */
     @Autowired
     private ExpenseRepository expenses;
 
+    /** Partition maintenance, used when seeding rows directly. */
     @Autowired
     private MonthlyPartitions partitions;
 
+    /**
+     * A seeded user: the JWT subject to authenticate as and the stored profile.
+     *
+     * @param subject the Keycloak subject
+     * @param user    the saved profile
+     */
     private record Seed(String subject, UserProfile user) {
     }
 
+    /** Saves a fresh user and returns it with its JWT subject. */
     private Seed seedUser() {
         UserProfile user = users.save(UserProfileMother.aUserProfile());
         return new Seed(user.getKeycloakSubject(), user);
     }
 
+    /** A request post-processor authenticating as the seeded user. */
     private static RequestPostProcessor as(Seed seed) {
         return jwt().jwt(jwt -> jwt.subject(seed.subject()));
     }
 
+    /** POSTs a new expense; {@code extra} is raw JSON members appended after {@code categoryId}. */
     private ResultActions create(Seed seed, String date, String amount, UUID category, String extra) throws Exception {
         String body = """
             {"date":"%s","amount":{"amount":"%s","currency":"INR"},"categoryId":"%s"%s}"""
@@ -74,31 +94,40 @@ class ExpenseControllerIntegrationTest extends AbstractIntegrationTest {
             .content(body));
     }
 
+    /** Creates an expense, asserts 201 and returns its id. */
     private String createId(Seed seed, String date, String amount, UUID category, String extra) throws Exception {
         String body = create(seed, date, amount, category, extra).andExpect(status().isCreated())
             .andReturn().getResponse().getContentAsString();
         return JsonPath.read(body, "$.id");
     }
 
+    /** All stored split parts (those with a parent) of the seeded user. */
     private java.util.List<Expense> splitsOf(Seed seed) {
         return expenses.findAll().stream()
             .filter(e -> e.getUserId().equals(seed.user().getId()) && e.getParentExpenseId() != null).toList();
     }
 
+    /** PATCHes an expense with a raw JSON body. */
     private ResultActions patchJson(Seed seed, String id, String json) throws Exception {
         return mockMvc.perform(patch("/api/v1/expenses/" + id).with(as(seed)).contentType(MediaType.APPLICATION_JSON)
             .content(json));
     }
 
+    /** POSTs a split; {@code parts} is a raw JSON array. */
     private ResultActions split(Seed seed, String id, String parts) throws Exception {
         return mockMvc.perform(post("/api/v1/expenses/" + id + "/split").with(as(seed))
             .contentType(MediaType.APPLICATION_JSON).content("{\"parts\":" + parts + "}"));
     }
 
+    /** JSON for one split part with a positive INR amount and a category. */
     private static String part(String amount, UUID category) {
         return "{\"amount\":{\"amount\":\"%s\",\"currency\":\"INR\"},\"categoryId\":\"%s\"}".formatted(amount, category);
     }
 
+    /**
+     * A manual expense is created with trimmed merchant, MANUAL origin and a necessity resolved from the
+     * explicit value, then subcategory, then category default.
+     */
     @Test
     void createsAManualExpenseWithTheCategoryDefaultNecessity() throws Exception {
         Seed seed = seedUser();
@@ -121,6 +150,7 @@ class ExpenseControllerIntegrationTest extends AbstractIntegrationTest {
             .andExpect(jsonPath("$.necessity", equalTo("DISCRETIONARY")));
     }
 
+    /** Creating an expense in a far-future month provisions its partition and the expense is listed. */
     @Test
     void createsInAMonthThatHasNoPartitionYet() throws Exception {
         Seed seed = seedUser();
@@ -129,6 +159,10 @@ class ExpenseControllerIntegrationTest extends AbstractIntegrationTest {
             .andExpect(jsonPath("$.content", hasSize(1)));
     }
 
+    /**
+     * Invalid creates are rejected: non-positive or over-precise amounts, long merchant, missing fields
+     * (400), non-INR currency, unknown category and mismatched subcategory (422).
+     */
     @Test
     void rejectsInvalidCreates() throws Exception {
         Seed seed = seedUser();
@@ -154,6 +188,7 @@ class ExpenseControllerIntegrationTest extends AbstractIntegrationTest {
             .andExpect(jsonPath("$.code", equalTo("INVALID_SUBCATEGORY")));
     }
 
+    /** A custom category can be used only by its owner and only under its own parent. */
     @Test
     void cannotUseAnotherUsersCustomCategory() throws Exception {
         Seed mine = seedUser();
@@ -169,13 +204,19 @@ class ExpenseControllerIntegrationTest extends AbstractIntegrationTest {
             .andExpect(status().isUnprocessableEntity());
     }
 
+    /** Category persistence, for creating custom categories. */
     @Autowired
     private CategoryRepository categories;
 
+    /** Saves a custom DISCRETIONARY child of {@link #FOOD} owned by the seeded user. */
     private Category categoryFor(Seed seed, String name) {
         return categories.save(Category.custom(seed.user().getId(), FOOD, name, Necessity.DISCRETIONARY));
     }
 
+    /**
+     * Cursor paging walks all pages newest first, returns each expense once and never lists split parts at
+     * top level.
+     */
     @Test
     void listsNewestFirstWithCursorAndNoSplitChildrenAtTopLevel() throws Exception {
         Seed seed = seedUser();
@@ -208,6 +249,10 @@ class ExpenseControllerIntegrationTest extends AbstractIntegrationTest {
         assertThat(seen).contains(parent);
     }
 
+    /**
+     * The list filters by category or subcategory, necessity, origin, merchant text (LIKE wildcards
+     * literal), month and date range.
+     */
     @Test
     void filtersByCategoryNecessityOriginAndMerchant() throws Exception {
         Seed seed = seedUser();
@@ -236,6 +281,10 @@ class ExpenseControllerIntegrationTest extends AbstractIntegrationTest {
             .andExpect(jsonPath("$.content", hasSize(2)));
     }
 
+    /**
+     * Conflicting or malformed list parameters (month with range, bad month, reversed range, oversized
+     * limit, garbage cursor, unknown necessity) give 400.
+     */
     @Test
     void rejectsBadListParameters() throws Exception {
         Seed seed = seedUser();
@@ -250,6 +299,7 @@ class ExpenseControllerIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/v1/expenses").param("necessity", "NOPE").with(as(seed))).andExpect(status().isBadRequest());
     }
 
+    /** A cursor issued for one filter set is rejected (400) when reused with different filters. */
     @Test
     void cursorIsBoundToItsFilters() throws Exception {
         Seed seed = seedUser();
@@ -263,6 +313,10 @@ class ExpenseControllerIntegrationTest extends AbstractIntegrationTest {
             .andExpect(status().isBadRequest());
     }
 
+    /**
+     * An expense is readable only by its owner; another user's expense gives 404 for get, patch and
+     * delete, and a non-UUID id gives 400.
+     */
     @Test
     void getsOneExpenseAndHidesOthers() throws Exception {
         Seed mine = seedUser();
@@ -279,6 +333,10 @@ class ExpenseControllerIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/v1/expenses/not-a-uuid").with(as(mine))).andExpect(status().isBadRequest());
     }
 
+    /**
+     * A manual expense can be patched (merchant, necessity, exclusion, amount, date), moving between
+     * monthly partitions while keeping its subcategory.
+     */
     @Test
     void updatesManualExpenseIncludingMovingItToAnotherMonth() throws Exception {
         Seed seed = seedUser();
@@ -299,6 +357,10 @@ class ExpenseControllerIntegrationTest extends AbstractIntegrationTest {
             .andExpect(jsonPath("$.content", hasSize(0)));
     }
 
+    /**
+     * Subcategory is tri-state on patch: absent keeps it, null clears it, a new category clears it unless
+     * one is given; invalid combinations and values are rejected.
+     */
     @Test
     void changingCategoryClearsTheSubcategoryUnlessGivenAndNullClearsIt() throws Exception {
         Seed seed = seedUser();
@@ -318,6 +380,10 @@ class ExpenseControllerIntegrationTest extends AbstractIntegrationTest {
         patchJson(seed, id, "{\"amount\":{\"amount\":\"0.00\",\"currency\":\"INR\"}}").andExpect(status().isBadRequest());
     }
 
+    /**
+     * An AA-derived expense can be recategorised but changing its amount or date, or deleting it, gives
+     * 409 SOURCE_READ_ONLY.
+     */
     @Test
     void aaDerivedExpensesAreRecategorisableButTheirAmountAndDateAreReadOnly() throws Exception {
         Seed seed = seedUser();
@@ -339,6 +405,7 @@ class ExpenseControllerIntegrationTest extends AbstractIntegrationTest {
         assertThat(expenses.findById(aa.getId())).isPresent();
     }
 
+    /** Deleting a manual expense also removes its split parts. */
     @Test
     void deletesAManualExpenseAndItsSplits() throws Exception {
         Seed seed = seedUser();
@@ -352,6 +419,10 @@ class ExpenseControllerIntegrationTest extends AbstractIntegrationTest {
         assertThat(expenses.findAll()).noneMatch(e -> e.getUserId().equals(seed.user().getId()));
     }
 
+    /**
+     * A split creates parts that inherit the habits exclusion, blocks re-split and amount edits, cascades
+     * exclusion changes, and can be undone repeatedly and redone.
+     */
     @Test
     void splitsAnExpenseAndUndoesIt() throws Exception {
         Seed seed = seedUser();
@@ -388,6 +459,10 @@ class ExpenseControllerIntegrationTest extends AbstractIntegrationTest {
         split(seed, id, "[" + part("50.00", GROCERIES) + "," + part("50.00", DINING_OUT) + "]").andExpect(status().isOk());
     }
 
+    /**
+     * Bad splits are rejected: sum mismatch (422), one part, zero amount or more than 20 parts (400),
+     * unknown category (422), and another user's expense (404).
+     */
     @Test
     void rejectsBadSplits() throws Exception {
         Seed seed = seedUser();
@@ -411,6 +486,7 @@ class ExpenseControllerIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/v1/expenses/" + id).with(as(seed))).andExpect(jsonPath("$.splits").doesNotExist());
     }
 
+    /** A split part can't itself be split (409), unsplit (404) or deleted (409). */
     @Test
     void aSplitPartCannotBeSplitOrUnsplit() throws Exception {
         Seed seed = seedUser();
@@ -424,6 +500,7 @@ class ExpenseControllerIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(delete("/api/v1/expenses/" + child).with(as(seed))).andExpect(status().isConflict());
     }
 
+    /** Requests without a JWT are rejected with 401. */
     @Test
     void requiresAuthentication() throws Exception {
         mockMvc.perform(get("/api/v1/expenses")).andExpect(status().isUnauthorized());

@@ -9,11 +9,13 @@ import org.springframework.context.annotation.Configuration;
 @EnableConfigurationProperties(CryptoProperties.class)
 public class CryptoConfig {
 
+    /** Field encryptor bean; fails startup if the encryption key is missing or malformed. */
     @Bean
     FieldEncryptor fieldEncryptor(CryptoProperties properties) {
         return FieldEncryptor.from(properties);
     }
 
+    /** Blind-index hasher bean; fails startup if the blind-index key is missing or malformed. */
     @Bean
     BlindIndexHasher blindIndexHasher(CryptoProperties properties) {
         return BlindIndexHasher.from(properties);

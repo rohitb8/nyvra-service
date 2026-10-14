@@ -16,12 +16,15 @@ import com.rohit.nyvra.AbstractIntegrationTest;
 @TestPropertySource(properties = {"nyvra.jobs.enabled=true", "nyvra.partitions.months-ahead=5"})
 class MonthlyRangePartitionMaintenanceIntegrationTest extends AbstractIntegrationTest {
 
+    /** Job under test. */
     @Autowired
     private MonthlyRangePartitionMaintenance job;
 
+    /** Used for catalog and ShedLock table queries. */
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    /** Running the job creates partitions five months ahead for both tables and records its ShedLock row. */
     @Test
     void createsPartitionsAheadUnderAShedLock() {
         job.createUpcomingPartitions();

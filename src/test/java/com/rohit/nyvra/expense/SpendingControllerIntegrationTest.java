@@ -33,7 +33,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 @AutoConfigureMockMvc
 class SpendingControllerIntegrationTest extends AbstractIntegrationTest {
 
-    /** Seeded in V4.1: "Food & dining", top level. */
+    /** Seeded in V4.1: "Food and dining", top level. */
     private static final UUID FOOD = UUID.fromString("40a8ed3d-45f2-50fe-8806-e94e6a8eb931");
 
     /** Seeded in V4.1: "Groceries", a child of {@link #FOOD}. */
@@ -42,10 +42,10 @@ class SpendingControllerIntegrationTest extends AbstractIntegrationTest {
     /** Seeded in V4.1: "Shopping", top level. */
     private static final UUID SHOPPING = UUID.fromString("777df330-9c34-5d70-856b-cc533d7b77f6");
 
-    /** Seeded in V4.1: "EMIs & loans", top level. */
+    /** Seeded in V4.1: "EMIs and loans", top level. */
     private static final UUID EMI = UUID.fromString("ff308a7b-f59e-557f-88ca-ad2ad67ae1ca");
 
-    /** Seeded in V4.1: "Savings & investments", top level. */
+    /** Seeded in V4.1: "Savings and investments", top level. */
     private static final UUID SAVINGS = UUID.fromString("49b7aad8-7477-544d-9cdf-46b4faf1a3b5");
 
     /** The month all fixtures live in. */

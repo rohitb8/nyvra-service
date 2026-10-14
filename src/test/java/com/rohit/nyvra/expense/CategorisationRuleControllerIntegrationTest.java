@@ -41,7 +41,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 @AutoConfigureMockMvc
 class CategorisationRuleControllerIntegrationTest extends AbstractIntegrationTest {
 
-    /** Seeded in V4.1: "Food & dining" (ESSENTIAL), top level. */
+    /** Seeded in V4.1: "Food and dining" (ESSENTIAL), top level. */
     private static final UUID FOOD = UUID.fromString("40a8ed3d-45f2-50fe-8806-e94e6a8eb931");
 
     /** Seeded in V4.1: "Food delivery", a child of {@link #FOOD}. */

@@ -6,8 +6,10 @@ import java.util.Arrays;
 
 import org.junit.jupiter.api.Test;
 
+/** Unit tests for {@link BlindIndexHasher}. */
 class BlindIndexHasherTest {
 
+    /** Same key and value always give the same 64-character hex digest; a different key gives a different digest. */
     @Test
     void isDeterministicPerKeyAndDiffersAcrossKeys() {
         byte[] keyA = new byte[32];

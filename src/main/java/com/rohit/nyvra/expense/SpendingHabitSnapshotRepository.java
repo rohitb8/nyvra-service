@@ -6,6 +6,7 @@ import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
+/** Persistence for {@link SpendingHabitSnapshot}. */
 public interface SpendingHabitSnapshotRepository extends JpaRepository<SpendingHabitSnapshot, UUID> {
 
     /** @param periodMonth the first day of the month */

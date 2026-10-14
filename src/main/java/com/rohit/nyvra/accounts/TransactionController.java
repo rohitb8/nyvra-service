@@ -25,12 +25,29 @@ import org.springframework.web.bind.annotation.RestController;
 @SecurityRequirement(name = "keycloak")
 public class TransactionController {
 
+    /** Read-side ledger service. */
     private final TransactionService service;
 
+    /**
+     * Creates the controller.
+     *
+     * @param service transaction read service
+     */
     public TransactionController(TransactionService service) {
         this.service = service;
     }
 
+    /**
+     * Lists transactions across the caller's accounts, newest first.
+     *
+     * @param accountId optional account ids to restrict to
+     * @param from optional inclusive start value date
+     * @param to optional inclusive end value date
+     * @param direction optional debit/credit filter
+     * @param cursor opaque cursor from the previous page
+     * @param limit page size, 1 to 200
+     * @return one cursor page
+     */
     @GetMapping("/transactions")
     @Operation(summary = "List transactions across accounts", description = "Newest first. Cursor-paginated.")
     public CursorPage<TransactionResponse> list(
@@ -43,6 +60,17 @@ public class TransactionController {
         return service.list(accountId, from, to, direction, cursor, limit);
     }
 
+    /**
+     * Lists one account's transactions, newest first.
+     *
+     * @param accountId account id
+     * @param from optional inclusive start value date
+     * @param to optional inclusive end value date
+     * @param direction optional debit/credit filter
+     * @param cursor opaque cursor from the previous page
+     * @param limit page size, 1 to 200
+     * @return one cursor page
+     */
     @GetMapping("/accounts/{accountId}/transactions")
     @Operation(summary = "List one account's transactions", description = "Newest first. Cursor-paginated.")
     public CursorPage<TransactionResponse> listForAccount(
@@ -55,6 +83,12 @@ public class TransactionController {
         return service.listForAccount(accountId, from, to, direction, cursor, limit);
     }
 
+    /**
+     * Returns one transaction.
+     *
+     * @param transactionId transaction id
+     * @return the transaction; 404 if not the caller's
+     */
     @GetMapping("/transactions/{transactionId}")
     @Operation(summary = "Get one transaction",
         description = "Transactions are immutable; corrections arrive as new reversing transactions.")

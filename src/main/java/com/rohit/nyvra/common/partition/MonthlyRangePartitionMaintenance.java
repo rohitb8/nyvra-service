@@ -23,10 +23,20 @@ import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 @ConditionalOnProperty(name = "nyvra.jobs.enabled", havingValue = "true")
 public class MonthlyRangePartitionMaintenance {
 
+    /** Creates the monthly partitions. */
     private final MonthlyPartitions partitions;
+    /** How many months beyond the current one to keep partitions for. */
     private final int monthsAhead;
+    /** UTC clock used to determine the current month. */
     private final Clock clock;
 
+    /**
+     * Creates the job.
+     *
+     * @param partitions partition creator
+     * @param monthsAhead months ahead of the current month to cover
+     *                    ({@code nyvra.partitions.months-ahead}, default 3)
+     */
     public MonthlyRangePartitionMaintenance(
         MonthlyPartitions partitions,
         @Value("${nyvra.partitions.months-ahead:3}") int monthsAhead
@@ -36,6 +46,10 @@ public class MonthlyRangePartitionMaintenance {
         this.clock = Clock.systemUTC();
     }
 
+    /**
+     * Ensures partitions from the current UTC month through {@code monthsAhead} months ahead, for every table.
+     * Runs once at startup and then on the configured cron (default 02:15 UTC daily), under a ShedLock.
+     */
     @EventListener(ApplicationReadyEvent.class)
     @Scheduled(cron = "${nyvra.partitions.cron:0 15 2 * * *}", zone = "UTC")
     @SchedulerLock(name = "monthly-range-partition-maintenance", lockAtMostFor = "PT10M")

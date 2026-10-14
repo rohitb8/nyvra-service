@@ -33,6 +33,11 @@ public class LocalPayslipStorage implements PayslipStorage {
         this.root = Path.of(directory).toAbsolutePath().normalize();
     }
 
+    /**
+     * Writes the content to the file for the key, creating parent directories and replacing any existing file.
+     *
+     * {@inheritDoc}
+     */
     @Override
     public void put(String key, InputStream content, String contentType) throws IOException {
         Path target = resolve(key);
@@ -40,11 +45,21 @@ public class LocalPayslipStorage implements PayslipStorage {
         Files.copy(content, target, StandardCopyOption.REPLACE_EXISTING);
     }
 
+    /**
+     * Opens the file stored under the key for reading.
+     *
+     * {@inheritDoc}
+     */
     @Override
     public InputStream open(String key) throws IOException {
         return Files.newInputStream(resolve(key));
     }
 
+    /**
+     * Deletes the file stored under the key; a missing file is ignored.
+     *
+     * {@inheritDoc}
+     */
     @Override
     public void delete(String key) throws IOException {
         Files.deleteIfExists(resolve(key));

@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+/** Persistence for {@link Category}. */
 public interface CategoryRepository extends JpaRepository<Category, UUID> {
 
     /** The system tree plus this user's own custom categories — never another user's. */

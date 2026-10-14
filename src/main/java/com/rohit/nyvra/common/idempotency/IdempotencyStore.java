@@ -22,6 +22,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class IdempotencyStore {
 
+    /** Logger for degraded-mode warnings. */
     private static final Logger log = LoggerFactory.getLogger(IdempotencyStore.class);
 
     /** Prefix that namespaces idempotency entries in Redis. */

@@ -42,15 +42,28 @@ public class AccountService {
     /** The only currency supported in v1 (API_DESIGN §3). */
     private static final String SUPPORTED_CURRENCY = Money.INR;
 
+    /** Request fields the account list may be sorted by. */
     private static final Set<String> SORTABLE = Set.of("label", "type", "balanceAsOf", "currentBalance");
 
+    /** Conflict code: the field is synced from the source and cannot be edited. */
     private static final String SOURCE_READ_ONLY = "SOURCE_READ_ONLY";
+    /** Conflict code: the account is closed and immutable. */
     private static final String ACCOUNT_CLOSED = "ACCOUNT_CLOSED";
 
+    /** Account persistence. */
     private final FinancialAccountRepository accounts;
+    /** Credit-card detail persistence. */
     private final CardDetailRepository cards;
+    /** Resolves the signed-in user. */
     private final CurrentUserService currentUser;
 
+    /**
+     * Creates the service.
+     *
+     * @param accounts account repository
+     * @param cards card detail repository
+     * @param currentUser current-user resolver
+     */
     public AccountService(FinancialAccountRepository accounts, CardDetailRepository cards,
                           CurrentUserService currentUser) {
         this.accounts = accounts;
@@ -58,6 +71,18 @@ public class AccountService {
         this.currentUser = currentUser;
     }
 
+    /**
+     * Lists the caller's non-deleted accounts.
+     *
+     * @param types optional type filter; null or empty means all
+     * @param statuses optional status filter; null or empty means ACTIVE and STALE
+     * @param source optional record source filter
+     * @param page zero-based page index
+     * @param size page size
+     * @param sort {@code field,asc|desc} entries; null means {@code type,asc}
+     * @return one page of accounts with card details attached
+     * @throws BadRequestException if a sort entry is invalid
+     */
     @Transactional(readOnly = true)
     public PageResponse<AccountResponse> list(Collection<AccountType> types, Collection<AccountStatus> statuses,
                                               RecordSource source, int page, int size, List<String> sort) {
@@ -89,12 +114,27 @@ public class AccountService {
         return PageResponse.of(result, a -> AccountResponse.from(a, cardsByAccount.get(a.getId())));
     }
 
+    /**
+     * Returns one of the caller's accounts.
+     *
+     * @param id account id
+     * @return the account with its card, if any
+     * @throws ResourceNotFoundException if it is missing or not the caller's
+     */
     @Transactional(readOnly = true)
     public AccountResponse get(UUID id) {
         FinancialAccount account = owned(id);
         return AccountResponse.from(account, cardOf(account).orElse(null));
     }
 
+    /**
+     * Creates a manual account, plus card details when the type is CREDIT_CARD.
+     *
+     * @param request account payload; balance must be INR
+     * @return the created account
+     * @throws BadRequestException if card presence does not match the type
+     * @throws UnprocessableEntityException if a currency is not supported or differs
+     */
     @Transactional
     public AccountResponse create(CreateAccountRequest request) {
         UUID userId = currentUser.currentUser().getId();
@@ -127,6 +167,16 @@ public class AccountService {
         return AccountResponse.from(account, card);
     }
 
+    /**
+     * Applies a partial update. Balance and credit limit may only change on MANUAL accounts.
+     *
+     * @param id account id
+     * @param request fields to change; null fields are left alone
+     * @return the updated account
+     * @throws ConflictException if the account is closed or a synced field is edited
+     * @throws BadRequestException if a card update targets a non-card account
+     * @throws UnprocessableEntityException if an amount is in another currency
+     */
     @Transactional
     public AccountResponse update(UUID id, UpdateAccountRequest request) {
         FinancialAccount account = owned(id);
@@ -179,6 +229,12 @@ public class AccountService {
         return AccountResponse.from(account, cardOf(account).orElse(null));
     }
 
+    /**
+     * Soft-deletes a manual account.
+     *
+     * @param id account id
+     * @throws ConflictException if the account is linked rather than manual
+     */
     @Transactional
     public void delete(UUID id) {
         FinancialAccount account = owned(id);
@@ -188,24 +244,50 @@ public class AccountService {
         account.softDelete(Instant.now());
     }
 
+    /**
+     * Loads a non-deleted account owned by the caller.
+     *
+     * @param id account id
+     * @return the account
+     * @throws ResourceNotFoundException if absent or owned by someone else
+     */
     private FinancialAccount owned(UUID id) {
         UUID userId = currentUser.currentUser().getId();
         return accounts.findByIdAndUserIdAndDeletedAtIsNull(id, userId)
             .orElseThrow(() -> ResourceNotFoundException.of("Account", id));
     }
 
+    /**
+     * Finds the card detail of a credit-card account.
+     *
+     * @param account the account
+     * @return the card, or empty for non-card accounts
+     */
     private Optional<CardDetail> cardOf(FinancialAccount account) {
         return account.getType() == AccountType.CREDIT_CARD
             ? cards.findByFinancialAccountId(account.getId()).stream().findFirst()
             : Optional.empty();
     }
 
+    /**
+     * Rejects any currency other than INR.
+     *
+     * @param currency ISO currency code
+     * @throws UnprocessableEntityException if unsupported
+     */
     private static void requireSupportedCurrency(String currency) {
         if (!SUPPORTED_CURRENCY.equals(currency)) {
             throw new UnprocessableEntityException("UNSUPPORTED_CURRENCY", "Only INR is supported");
         }
     }
 
+    /**
+     * Rejects an amount whose currency differs from the account's.
+     *
+     * @param account target account
+     * @param money amount to check
+     * @throws UnprocessableEntityException on mismatch
+     */
     private static void requireSameCurrency(FinancialAccount account, Money money) {
         if (!account.getCurrency().equals(money.currency())) {
             throw new UnprocessableEntityException(

@@ -44,21 +44,44 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ExpenseService {
 
+    /** Feed order: newest date first, id descending as the tie-break (matches the keyset cursor). */
     private static final Sort NEWEST_FIRST = Sort.by(Sort.Order.desc("date"), Sort.Order.desc("id"));
 
     /** The only currency supported in v1 (API_DESIGN §3). */
     private static final String SUPPORTED_CURRENCY = Money.INR;
 
+    /** Error code: amount/date of a non-manual expense cannot be edited, nor can it be deleted. */
     private static final String SOURCE_READ_ONLY = "SOURCE_READ_ONLY";
+
+    /** Error code: the expense is already split (or is itself a split part). */
     private static final String ALREADY_SPLIT = "ALREADY_SPLIT";
+
+    /** Error code: split parts do not add up to the parent amount. */
     private static final String SPLIT_SUM_MISMATCH = "SPLIT_SUM_MISMATCH";
+
+    /** Error code: the category is unknown or not visible to the caller. */
     private static final String INVALID_CATEGORY = "INVALID_CATEGORY";
 
+    /** Expense persistence. */
     private final ExpenseRepository expenses;
+
+    /** Category persistence, used to validate and resolve categories. */
     private final CategoryRepository categories;
+
+    /** Ensures the monthly partition exists before an expense is written into it. */
     private final MonthlyPartitions partitions;
+
+    /** Resolves the signed-in user. */
     private final CurrentUserService currentUser;
 
+    /**
+     * Creates the service.
+     *
+     * @param expenses    expense persistence
+     * @param categories  category persistence
+     * @param partitions  monthly partition maintenance
+     * @param currentUser the signed-in user resolver
+     */
     public ExpenseService(ExpenseRepository expenses, CategoryRepository categories, MonthlyPartitions partitions,
                           CurrentUserService currentUser) {
         this.expenses = expenses;
@@ -67,6 +90,23 @@ public class ExpenseService {
         this.currentUser = currentUser;
     }
 
+    /**
+     * Lists the caller's top-level expenses, newest first, with keyset pagination. Split children are not listed on
+     * their own; each split parent carries its {@code splits}.
+     *
+     * @param month       restrict to this calendar month; mutually exclusive with {@code from}/{@code to}
+     * @param from        earliest expense date, inclusive; may be null
+     * @param to          latest expense date, inclusive; may be null
+     * @param categoryId  match expenses whose category or subcategory is this id; may be null
+     * @param necessities match any of these necessities; null or empty for all
+     * @param origin      restrict to one origin; may be null
+     * @param q           case-insensitive merchant substring, at most 100 characters; blank is ignored
+     * @param cursor      opaque cursor from a previous page, bound to the same filters; may be null
+     * @param limit       page size, at least 1
+     * @return one page and the cursor for the next, or null cursor when this is the last page
+     * @throws BadRequestException if {@code month} is combined with {@code from}/{@code to}, {@code from} is after
+     *                             {@code to}, {@code q} is too long, or the cursor is invalid for these filters
+     */
     @Transactional(readOnly = true)
     public CursorPage<ExpenseResponse> list(YearMonth month, LocalDate from, LocalDate to, UUID categoryId,
                                             Collection<Necessity> necessities, ExpenseOrigin origin, String q,
@@ -139,12 +179,28 @@ public class ExpenseService {
         return new CursorPage<>(toResponses(userId, page), next, limit);
     }
 
+    /**
+     * Returns one expense.
+     *
+     * @param id the expense id
+     * @return the expense, with its splits if it is a split parent
+     * @throws ResourceNotFoundException if it does not exist or is not the caller's
+     */
     @Transactional(readOnly = true)
     public ExpenseResponse get(UUID id) {
         UUID userId = currentUser.currentUser().getId();
         return toResponses(userId, List.of(find(userId, id))).get(0);
     }
 
+    /**
+     * Records a manual expense. The necessity defaults from the subcategory, then the category, when omitted.
+     *
+     * @param request the new expense; the amount must be positive INR
+     * @return the created expense
+     * @throws BadRequestException          if the amount is not positive
+     * @throws UnprocessableEntityException if the currency is not INR, a category is invalid, or no necessity is
+     *                                      given and none can be defaulted
+     */
     @Transactional
     public ExpenseResponse create(CreateExpenseRequest request) {
         UUID userId = currentUser.currentUser().getId();
@@ -160,6 +216,18 @@ public class ExpenseService {
         return toResponses(userId, List.of(expense)).get(0);
     }
 
+    /**
+     * Applies a partial update: only the fields present in the request change. Amount and date are editable only on
+     * unsplit {@code MANUAL} expenses; excluding from habits cascades to a split parent's parts.
+     *
+     * @param id      the expense id
+     * @param request the fields to change
+     * @return the updated expense
+     * @throws ResourceNotFoundException    if it does not exist or is not the caller's
+     * @throws ConflictException            {@code SOURCE_READ_ONLY} or {@code ALREADY_SPLIT} for a forbidden amount
+     *                                      or date change
+     * @throws UnprocessableEntityException if a category or subcategory is invalid
+     */
     @Transactional
     public ExpenseResponse update(UUID id, UpdateExpenseRequest request) {
         UUID userId = currentUser.currentUser().getId();
@@ -206,6 +274,13 @@ public class ExpenseService {
         return toResponses(userId, List.of(expense)).get(0);
     }
 
+    /**
+     * Deletes a manual expense together with its split parts.
+     *
+     * @param id the expense id
+     * @throws ResourceNotFoundException if it does not exist or is not the caller's
+     * @throws ConflictException         {@code SOURCE_READ_ONLY} if the expense is not manual
+     */
     @Transactional
     public void delete(UUID id) {
         UUID userId = currentUser.currentUser().getId();
@@ -218,6 +293,17 @@ public class ExpenseService {
         expenses.delete(expense);
     }
 
+    /**
+     * Splits an expense into parts whose amounts sum exactly to it.
+     *
+     * @param id      the expense id
+     * @param request the parts, each with a positive amount in the expense's currency and a category
+     * @return the parent expense with its new {@code splits}
+     * @throws ResourceNotFoundException    if it does not exist or is not the caller's
+     * @throws ConflictException            {@code ALREADY_SPLIT} if it is already split or is itself a part
+     * @throws UnprocessableEntityException if a part's currency differs, the sum does not match
+     *                                      ({@code SPLIT_SUM_MISMATCH}) or a category is invalid
+     */
     @Transactional
     public ExpenseResponse split(UUID id, SplitExpenseRequest request) {
         UUID userId = currentUser.currentUser().getId();
@@ -256,7 +342,13 @@ public class ExpenseService {
         return toResponses(userId, List.of(parent)).get(0);
     }
 
-    /** Idempotent: unsplitting an expense that isn't split just returns it. */
+    /**
+     * Removes all split parts of an expense. Idempotent: unsplitting an expense that isn't split just returns it.
+     *
+     * @param id the parent expense id
+     * @return the parent without {@code splits}
+     * @throws ResourceNotFoundException if it does not exist, is not the caller's, or is itself a split part
+     */
     @Transactional
     public ExpenseResponse unsplit(UUID id) {
         UUID userId = currentUser.currentUser().getId();
@@ -271,20 +363,24 @@ public class ExpenseService {
 
     // ------------------------------------------------------------------ helpers
 
+    /** Loads the caller's expense; 404 if missing or owned by someone else. */
     private Expense find(UUID userId, UUID id) {
         return expenses.findById(id)
             .filter(e -> e.getUserId().equals(userId))
             .orElseThrow(() -> ResourceNotFoundException.of("Expense", id));
     }
 
+    /** Whether the expense has at least one split part. */
     private boolean hasSplits(UUID userId, Expense expense) {
         return !childrenOf(userId, expense).isEmpty();
     }
 
+    /** The split parts of a parent expense. */
     private List<Expense> childrenOf(UUID userId, Expense parent) {
         return expenses.findByUserIdAndParentExpenseIdIn(userId, List.of(parent.getId()));
     }
 
+    /** The categories the user can see (system plus own custom), keyed by id. */
     private Map<UUID, Category> visibleCategories(UUID userId) {
         return categories.findVisibleTo(userId).stream().collect(Collectors.toMap(Category::getId, c -> c));
     }
@@ -333,10 +429,12 @@ public class ExpenseService {
         return money;
     }
 
+    /** Strips the value; null when it is null or blank. */
     private static String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.strip();
     }
 
+    /** Maps parent expenses to responses, attaching split parts (sorted by id) and category names in bulk. */
     private List<ExpenseResponse> toResponses(UUID userId, List<Expense> parents) {
         if (parents.isEmpty()) {
             return List.of();
@@ -360,6 +458,7 @@ public class ExpenseService {
         }).toList();
     }
 
+    /** A category reference for the id, or null when the id is null. */
     private static CategoryRef ref(Map<UUID, Category> categories, UUID id) {
         return id == null ? null : CategoryRef.from(categories.get(id));
     }

@@ -31,24 +31,31 @@ import com.rohit.nyvra.user.UserProfileRepository;
  */
 class AccountsRepositoryIntegrationTest extends AbstractIntegrationTest {
 
+    /** User persistence. */
     @Autowired
     private UserProfileRepository users;
 
+    /** Account persistence. */
     @Autowired
     private FinancialAccountRepository accounts;
 
+    /** Ledger persistence. */
     @Autowired
     private AccountTransactionRepository transactions;
 
+    /** Card detail persistence. */
     @Autowired
     private CardDetailRepository cards;
 
+    /** Creates the monthly partitions the inserts need. */
     @Autowired
     private MonthlyPartitions partitions;
 
+    /** Reads raw column values to inspect what is stored. */
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    /** 1000 transactions across two monthly partitions page back newest first, and rows land in both partitions. */
     @Test
     void persistsAThousandTransactionsAcrossTwoMonthlyPartitionsAndPagesThem() {
         UserProfile user = users.save(UserProfileMother.aUserProfile());
@@ -83,6 +90,7 @@ class AccountsRepositoryIntegrationTest extends AbstractIntegrationTest {
             .containsExactly("transaction_2025_03", "transaction_2025_04");
     }
 
+    /** Narration and masked number are ciphertext in the database and plaintext through the entities. */
     @Test
     void encryptsSensitiveColumnsAtRestAndDecryptsOnRead() {
         UserProfile user = users.save(UserProfileMother.aUserProfile());
@@ -106,6 +114,7 @@ class AccountsRepositoryIntegrationTest extends AbstractIntegrationTest {
         assertThat(accounts.findById(account.getId()).orElseThrow().getMaskedNumber()).isEqualTo("XXXX1234");
     }
 
+    /** A second row with the same dedup key and value date violates the unique constraint. */
     @Test
     void rejectsADuplicateDedupKeyOnTheSameValueDate() {
         UserProfile user = users.save(UserProfileMother.aUserProfile());
@@ -118,6 +127,7 @@ class AccountsRepositoryIntegrationTest extends AbstractIntegrationTest {
             .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    /** Account lookups are user-scoped and exclude soft-deleted accounts. */
     @Test
     void scopesAccountLookupsToTheOwnerAndHidesSoftDeleted() {
         UserProfile owner = users.save(UserProfileMother.aUserProfile());
@@ -132,6 +142,7 @@ class AccountsRepositoryIntegrationTest extends AbstractIntegrationTest {
             .extracting(FinancialAccount::getId).containsExactly(kept.getId());
     }
 
+    /** Card details keep last 4 and credit limit only; a non-digit last4 is rejected. */
     @Test
     void storesCardDisplayDetailsOnly() {
         UserProfile user = users.save(UserProfileMother.aUserProfile());
@@ -150,11 +161,25 @@ class AccountsRepositoryIntegrationTest extends AbstractIntegrationTest {
             .isInstanceOf(IllegalArgumentException.class);
     }
 
+    /**
+     * Builds a manual INR savings account with balance 1000.00.
+     *
+     * @param userId owner
+     * @return an unsaved account
+     */
     private static FinancialAccount anAccount(UUID userId) {
         return new FinancialAccount(userId, AccountType.SAVINGS, "HDFC Bank", "XXXX1234", "Salary account",
             Money.inr("1000.00"), Instant.now(), RecordSource.MANUAL);
     }
 
+    /**
+     * Builds a minimal aggregator debit of 1.00.
+     *
+     * @param account owning account
+     * @param date value and booking date
+     * @param dedupKey deduplication key
+     * @return an unsaved transaction
+     */
     private static AccountTransaction aTransaction(FinancialAccount account, LocalDate date, String dedupKey) {
         return new AccountTransaction(account.getId(), account.getUserId(), date, date, Money.inr("-1.00"),
             null, null, null, RecordSource.AA, dedupKey);

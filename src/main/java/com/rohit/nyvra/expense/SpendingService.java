@@ -44,6 +44,7 @@ public class SpendingService {
     /** Scale of the percentages on the wire. */
     private static final int PCT_SCALE = 1;
 
+    /** Multiplier to turn a ratio into a percentage. */
     private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
 
     /** Expense persistence. */

@@ -6,6 +6,11 @@ package com.rohit.nyvra.common.exception;
  */
 public class BadRequestException extends RuntimeException {
 
+    /**
+     * Creates the exception.
+     *
+     * @param message client-safe description of what is wrong with the request
+     */
     public BadRequestException(String message) {
         super(message);
     }

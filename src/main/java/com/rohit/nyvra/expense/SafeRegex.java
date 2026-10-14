@@ -15,6 +15,7 @@ final class SafeRegex {
     /** Longest a single match attempt may run. */
     static final long MATCH_TIMEOUT_NANOS = 100_000_000L;
 
+    /** Not instantiable; static helpers only. */
     private SafeRegex() {
     }
 
